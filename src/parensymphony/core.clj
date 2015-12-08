@@ -6,7 +6,6 @@
 (def window-width 1000)
 (def window-height 1000)
 
-
 (definst beep [freq 440]
   (-> freq
       saw
@@ -33,7 +32,10 @@
         reverb (free-verb clp 0.4 0.8 0.2)]
     (* amp (env-gen (perc 0.0001 dur) :action FREE) reverb)))
 
-(def prog-55 [(chord :A2 :minor) (chord :F2 :major) (chord :G2 :major) (chord :A2 :minor)])
+(def prog-55 [(chord :A2 :minor)
+              (chord :F2 :major)
+              (chord :G2 :major)
+              (chord :A2 :minor)])
 
 (defn play-chord [inst a-chord]
   (doseq [note a-chord] (inst note :dur 8)))
@@ -122,7 +124,6 @@
                     (assoc  :code (insert-char (:code state) (q/raw-key) (:cursor-index state)))
                     (update-in [:cursor-index] cursor-move-right))))))
 
-
 (q/defsketch parensymphony
   :title "symphony"
   :setup setup
@@ -131,3 +132,27 @@
   :renderer :p2d
   :middleware [m/fun-mode m/pause-on-error]
   :size [window-width window-height])
+
+(def char-keycode-map (hash-map :0 48 :1 49 :2 50 :3 51 :4 52 :5 53 :6 54 :7 55 :8 56 :9 57
+                                :a 65 :b 66 :c 67 :d 68 :e 69 :f 70 :g 71 :h 72 :i 73 :j 74
+                                :k 75 :l 76 :m 77 :n 78 :o 79 :p 80 :q 81 :r 82 :s 83 :t 84
+                                :u 85 :v 86 :w 87 :x 88 :y 89 :z 90))
+
+(defn char->keycode [char]
+  (char-keycode-map (keyword (str char))))
+
+(defn gen-pattern [n]
+  (cond
+    (or (number? n) (symbol? n)) (map char->keycode (seq (str n)))
+    (empty? n) nil
+    :else (cons (gen-pattern (first n))
+                (gen-pattern (rest n)))))
+
+(defn play [time notes sep]
+  (let [note (first notes)]
+    (when note
+      (at time (plucked-string note)))
+    (let [next-time (+ time sep)]
+      (apply-by next-time play [next-time (rest notes) sep]))))
+
+;; (play (now) (flatten (gen-pattern '(defn hogehoge [foo bar] (foo bar 123)))) 300)
