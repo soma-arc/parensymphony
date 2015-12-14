@@ -32,6 +32,7 @@
         reverb (free-verb clp 0.4 0.8 0.2)]
     (* amp (env-gen (perc 0.0001 dur) :action FREE) reverb)))
 
+
 (def prog-55 [(chord :A2 :minor)
               (chord :F2 :major)
               (chord :G2 :major)
@@ -58,14 +59,17 @@
   {:pressed-key ""
    :scale-index 0 :scale-root :E3 :scale-name :phrygian
    :chord-index 0 :chord-root :C3 :chord-name :major
-   :cursor-index 0 :code ""})
+   :cursor-index 0 :code ""
+   :pressing-ctr? false})
 
 (defn draw [state]
   (q/background 0)
   (q/fill 255)
-
+  (q/text-size 20)
   (q/text (str (:pressed-key state)) 20 20)
-  (q/text (:code state) 20 100))
+  (q/text (:code state) 20 100)
+  (if (:pressing-ctr? state)
+    (q/text "pressing ctr" 300 300)))
 
 (defn split-by-index
     [strg idx] [(subs strg 0 idx) (subs strg idx (count strg))])
@@ -74,10 +78,12 @@
   (let [[left right] (split-by-index code cursor-index)]
     (str left char right)))
 
-(defn delete-backward-char [code cursor-index]
+(defn delete-backward-char [{:keys [code cursor-index] :as state}]
   (if (or (<= cursor-index 0) (> cursor-index (count code)))
-    code
-    (str (subs code 0 (dec cursor-index)) (subs code cursor-index (count code)))))
+    state
+    (assoc state
+           :code (str (subs code 0 (dec cursor-index)) (subs code cursor-index (count code)))
+           :cursor-index (cursor-move-left cursor-index))))
 
 (defn insert-paren [code cursor-index]
   (let [[left right] (split-by-index code cursor-index)]
@@ -93,42 +99,73 @@
 (defn cursor-move-left [cursor-index]
   (dec cursor-index))
 
+(def key-released-funcs
+  (hash-map ":control" (fn [state]
+                         (assoc state :pressing-ctr? false))))
+
+(def key-pressed-funcs
+  (hash-map ":(" (fn [state]
+                   (play-chord-with-key state)
+                   (-> state
+                       (update-in [:chord-index] inc-chord-index)
+                       (assoc :code (insert-paren (:code state) (:cursor-index state)))
+                       (update-in [:cursor-index] cursor-move-right)))
+            ":[" (fn [state]
+                   (play-chord-with-key state)
+                   (-> state
+                       (update-in [:chord-index] inc-chord-index)
+                       (assoc :code (insert-bracket (:code state) (:cursor-index state)))
+                       (update-in [:cursor-index] cursor-move-right)))
+            ": " (fn [state]
+                   (play-chord-with-key state)
+                   (-> state
+                       (update-in [:chord-index] inc-chord-index)
+                       (assoc  :code (insert-char (:code state) (q/raw-key) (:cursor-index state)))
+                       (update-in [:cursor-index] cursor-move-right)))
+            8 (fn [state]
+                (play-with-key state)
+                (update-in state [:scale-index] inc-index)
+                (delete-backward-char state))
+            ":shift" (fn [state]
+                       state)
+            ":right" (fn [state]
+                       (update-in state [:cursor-index] cursor-move-right))
+            ":left" (fn [state]
+                      (update-in state [:cursor-index] cursor-move-left))
+            ":control" (fn [state]
+                         (assoc state :pressing-ctr? true))))
+
+
 (defn key-pressed [state event]
   (let [c (str (q/key-as-keyword))]
     (println (q/raw-key))
-    (cond
-      (= c ":(" ) (do (play-chord-with-key state)
-                      (-> state
-                          (update-in [:chord-index] inc-chord-index)
-                          (assoc :code (insert-paren (:code state) (:cursor-index state)))
-                          (update-in [:cursor-index] cursor-move-right)))
-      (= c ":[") (do (play-chord-with-key state)
-                     (-> state
-                         (update-in [:chord-index] inc-chord-index)
-                         (assoc :code (insert-bracket (:code state) (:cursor-index state)))
-                         (update-in [:cursor-index] cursor-move-right)))
-      (= c ": ") (do (play-chord-with-key state)
-                     (-> state
-                         (update-in [:chord-index] inc-chord-index)
-                         (assoc  :code (insert-char (:code state) (q/raw-key) (:cursor-index state)))
-                         (update-in [:cursor-index] cursor-move-right)))
-      (= c ":shift") state
-      (= (q/key-code) 8) (do (play-with-key state)
-                             (-> state
-                                 (update-in [:scale-index] inc-index)
-                                 (assoc  :code (delete-backward-char (:code state) (:cursor-index state)))
-                                 (update-in [:cursor-index] cursor-move-left)))
-      :else (do (play-with-key state)
-                (-> state
-                    (update-in [:scale-index] inc-index)
-                    (assoc  :code (insert-char (:code state) (q/raw-key) (:cursor-index state)))
-                    (update-in [:cursor-index] cursor-move-right))))))
+    (q/text c 300 200)
+    ((key-pressed-funcs c
+                       (key-pressed-funcs (q/key-code) (fn [state]
+                                                       (play-with-key state)
+                                                       (-> state
+                                                           (update-in [:scale-index] inc-index)
+                                                           (assoc  :code (insert-char (:code state)
+                                                                                      (q/raw-key)
+                                                                                      (:cursor-index state)))
+                                                           (update-in [:cursor-index] cursor-move-right)))))
+     state)))
+
+(defn key-released [state]
+  (let [c (str (q/key-as-keyword))]
+    (println (q/raw-key))
+    (q/text c 300 200)
+    ((key-released-funcs c
+                     (fn [state]
+                       state))
+     state)))
 
 (q/defsketch parensymphony
   :title "symphony"
   :setup setup
   :draw draw
   :key-pressed key-pressed
+  :key-released key-released
   :renderer :p2d
   :middleware [m/fun-mode m/pause-on-error]
   :size [window-width window-height])
