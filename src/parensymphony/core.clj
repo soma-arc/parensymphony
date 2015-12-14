@@ -139,20 +139,31 @@
                                 :u 85 :v 86 :w 87 :x 88 :y 89 :z 90))
 
 (defn char->keycode [char]
-  (char-keycode-map (keyword (str char))))
+  (char-keycode-map (keyword (str char)) 55))
 
 (defn gen-pattern [n]
   (cond
-    (or (number? n) (symbol? n)) (map char->keycode (seq (str n)))
+    (or (number? n) (symbol? n) (keyword? n)) (map char->keycode (seq (str n)))
     (empty? n) nil
-    :else (cons (gen-pattern (first n))
-                (gen-pattern (rest n)))))
+    :else (concat (gen-pattern (first n))
+                  (list (chord :C3 :major))
+                  (gen-pattern (rest n)))))
 
 (defn play [time notes sep]
   (let [note (first notes)]
-    (when note
-      (at time (plucked-string note)))
+    (cond
+      (seq? note) (at time (play-chord plucked-string note))
+      :else (at time (plucked-string note)))
     (let [next-time (+ time sep)]
       (apply-by next-time play [next-time (rest notes) sep]))))
 
-;; (play (now) (flatten (gen-pattern '(defn hogehoge [foo bar] (foo bar 123)))) 300)
+(comment
+  ;;'(((((((((Lisp)))))))))
+  ;;program = data = score
+  ;;S expression -> phrase
+  (play (now) (gen-pattern '(definst beep [freq 440]
+                              (-> freq
+                                  saw
+                                  (* (env-gen (perc) :action FREE))))) 300)
+  (stop)
+)
