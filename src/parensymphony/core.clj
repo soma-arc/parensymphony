@@ -71,6 +71,12 @@
   (if (:pressing-ctr? state)
     (q/text "pressing ctr" 300 300)))
 
+(defn cursor-move-right [cursor-index]
+  (inc cursor-index))
+
+(defn cursor-move-left [cursor-index]
+  (dec cursor-index))
+
 (defn split-by-index
     [strg idx] [(subs strg 0 idx) (subs strg idx (count strg))])
 
@@ -93,72 +99,92 @@
   (let [[left right] (split-by-index code cursor-index)]
     (str left "[]" right)))
 
-(defn cursor-move-right [cursor-index]
-  (inc cursor-index))
+(def special-key-code-dic (hash-map 8 :delete))
 
-(defn cursor-move-left [cursor-index]
-  (dec cursor-index))
+(defn make-key-state []
+  {:raw-key (q/raw-key)
+   :key-code (q/key-code)
+   :key-as-keyword-str (str (special-key-code-dic (q/key-code)
+                                                 (q/key-as-keyword)))})
 
-(def key-released-funcs
-  (hash-map ":control" (fn [state]
-                         (assoc state :pressing-ctr? false))))
+(defmulti key-pressed-functions (fn [key-state state]
+                                  (:key-as-keyword-str key-state)))
 
-(def key-pressed-funcs
-  (hash-map ":(" (fn [state]
-                   (play-chord-with-key state)
-                   (-> state
-                       (update-in [:chord-index] inc-chord-index)
-                       (assoc :code (insert-paren (:code state) (:cursor-index state)))
-                       (update-in [:cursor-index] cursor-move-right)))
-            ":[" (fn [state]
-                   (play-chord-with-key state)
-                   (-> state
-                       (update-in [:chord-index] inc-chord-index)
-                       (assoc :code (insert-bracket (:code state) (:cursor-index state)))
-                       (update-in [:cursor-index] cursor-move-right)))
-            ": " (fn [state]
-                   (play-chord-with-key state)
-                   (-> state
-                       (update-in [:chord-index] inc-chord-index)
-                       (assoc  :code (insert-char (:code state) (q/raw-key) (:cursor-index state)))
-                       (update-in [:cursor-index] cursor-move-right)))
-            8 (fn [state]
-                (play-with-key state)
-                (update-in state [:scale-index] inc-index)
-                (delete-backward-char state))
-            ":shift" (fn [state]
-                       state)
-            ":right" (fn [state]
-                       (update-in state [:cursor-index] cursor-move-right))
-            ":left" (fn [state]
-                      (update-in state [:cursor-index] cursor-move-left))
-            ":control" (fn [state]
-                         (assoc state :pressing-ctr? true))))
+(defmethod key-pressed-functions ":(" [key-state state]
+  (play-chord-with-key state)
+  (-> state
+      (update-in [:chord-index] inc-chord-index)
+      (assoc :code (insert-paren (:code state) (:cursor-index state)))
+      (update-in [:cursor-index] cursor-move-right)))
 
+(defmethod key-pressed-functions ":[" [key-state state]
+  (play-chord-with-key state)
+  (-> state
+      (update-in [:chord-index] inc-chord-index)
+      (assoc :code (insert-bracket (:code state) (:cursor-index state)))
+      (update-in [:cursor-index] cursor-move-right)))
+
+(defmethod key-pressed-functions ":[" [key-state state]
+  (play-chord-with-key state)
+  (-> state
+      (update-in [:chord-index] inc-chord-index)
+      (assoc :code (insert-paren (:code state) (:cursor-index state)))
+      (update-in [:cursor-index] cursor-move-right)))
+
+(defmethod key-pressed-functions ": " [key-state state]
+  (play-chord-with-key state)
+  (-> state
+      (update-in [:chord-index] inc-chord-index)
+      (assoc  :code (insert-char (:code state) (q/raw-key) (:cursor-index state)))
+      (update-in [:cursor-index] cursor-move-right)))
+
+(defmethod key-pressed-functions ":shift" [key-state state]
+  state)
+
+(defmethod key-pressed-functions ":right" [key-state state]
+  (update-in state [:cursor-index] cursor-move-right))
+
+(defmethod key-pressed-functions ":left" [key-state state]
+  (update-in state [:cursor-index] cursor-move-left))
+
+(defmethod key-pressed-functions ":control" [key-state state]
+  (assoc state :pressing-ctr? true))
+
+(defmethod key-pressed-functions ":delete" [key-state state]
+  (play-with-key state)
+  (update-in state [:scale-index] inc-index)
+  (delete-backward-char state))
+
+(defmethod key-pressed-functions :default [key-state state]
+  (println (:key-as-keyword-str key-state))
+  (println (keyword?  (:key-as-keyword-str key-state)))
+  (println (string? (:key-as-keyword-str key-state)))
+
+  (play-with-key state)
+  (-> state
+      (update-in [:scale-index] inc-index)
+      (assoc  :code (insert-char (:code state)
+                                 (q/raw-key)
+                                 (:cursor-index state)))
+      (update-in [:cursor-index] cursor-move-right)))
+
+(defmulti key-released-functions (fn [key-state state]
+                                   (:key-as-keyword-str key-state)))
+
+(defmethod key-released-functions ":control" [key-state state]
+  (assoc state :pressing-ctr? false))
+
+(defmethod key-released-functions :default [key-state state]
+  state)
 
 (defn key-pressed [state event]
-  (let [c (str (q/key-as-keyword))]
-    (println (q/raw-key))
-    (q/text c 300 200)
-    ((key-pressed-funcs c
-                       (key-pressed-funcs (q/key-code) (fn [state]
-                                                       (play-with-key state)
-                                                       (-> state
-                                                           (update-in [:scale-index] inc-index)
-                                                           (assoc  :code (insert-char (:code state)
-                                                                                      (q/raw-key)
-                                                                                      (:cursor-index state)))
-                                                           (update-in [:cursor-index] cursor-move-right)))))
-     state)))
+  (let [key-state (make-key-state)]
+    (println key-state)
+    (key-pressed-functions key-state state)))
 
 (defn key-released [state]
-  (let [c (str (q/key-as-keyword))]
-    (println (q/raw-key))
-    (q/text c 300 200)
-    ((key-released-funcs c
-                     (fn [state]
-                       state))
-     state)))
+  (let [key-state (make-key-state)]
+    (key-released-functions key-state state)))
 
 (q/defsketch parensymphony
   :title "symphony"
