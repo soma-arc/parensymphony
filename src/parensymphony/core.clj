@@ -60,7 +60,7 @@
    :scale-index 0 :scale-root :E3 :scale-name :phrygian
    :chord-index 0 :chord-root :C3 :chord-name :major
    :cursor-index 0 :code ""
-   :pressing-ctr? false})
+   :pressing-ctr? false :pressing-alt? false})
 
 (defn draw [state]
   (q/background 0)
@@ -69,7 +69,11 @@
   (q/text (str (:pressed-key state)) 20 20)
   (q/text (:code state) 20 100)
   (if (:pressing-ctr? state)
-    (q/text "pressing ctr" 300 300)))
+    (q/text "pressing ctr" 300 300))
+  (if (:pressing-alt? state)
+    (q/text "pressing alt" 300 350))
+  (q/text (str (:result state)) 300 400)
+  (q/text (str (:error state)) 300 450))
 
 (defn cursor-move-right [cursor-index]
   (inc cursor-index))
@@ -88,7 +92,8 @@
   (if (or (<= cursor-index 0) (> cursor-index (count code)))
     state
     (assoc state
-           :code (str (subs code 0 (dec cursor-index)) (subs code cursor-index (count code)))
+           :code (str (subs code 0 (dec cursor-index))
+                      (subs code cursor-index (count code)))
            :cursor-index (cursor-move-left cursor-index))))
 
 (defn insert-paren [code cursor-index]
@@ -99,13 +104,14 @@
   (let [[left right] (split-by-index code cursor-index)]
     (str left "[]" right)))
 
-(def special-key-code-dic (hash-map 8 :delete))
+(def special-key-code-dic (hash-map 8 :backspace
+                                    10 :enter))
 
 (defn make-key-state []
   {:raw-key (q/raw-key)
    :key-code (q/key-code)
    :key-as-keyword-str (str (special-key-code-dic (q/key-code)
-                                                 (q/key-as-keyword)))})
+                                                  (q/key-as-keyword)))})
 
 (defmulti key-pressed-functions (fn [key-state state]
                                   (:key-as-keyword-str key-state)))
@@ -128,7 +134,7 @@
   (play-chord-with-key state)
   (-> state
       (update-in [:chord-index] inc-chord-index)
-      (assoc :code (insert-paren (:code state) (:cursor-index state)))
+      (assoc :code (insert-bracket (:code state) (:cursor-index state)))
       (update-in [:cursor-index] cursor-move-right)))
 
 (defmethod key-pressed-functions ": " [key-state state]
@@ -150,16 +156,33 @@
 (defmethod key-pressed-functions ":control" [key-state state]
   (assoc state :pressing-ctr? true))
 
-(defmethod key-pressed-functions ":delete" [key-state state]
-  (play-with-key state)
-  (update-in state [:scale-index] inc-index)
-  (delete-backward-char state))
+(defmethod key-pressed-functions ":alt" [key-state state]
+  (assoc state :pressing-alt? true))
+
+(defn delete-all [state]
+  (assoc state :code "" :cursor-index 0))
+
+(defmethod key-pressed-functions ":backspace" [key-state state]
+  (println (:scale-index state))
+  (if (:pressing-alt? state)
+    (delete-all state)
+    (do(play-with-key state)
+       (-> state
+           (update-in [:scale-index] inc-index)
+           (delete-backward-char)))))
+
+(defn eval-code [state]
+  (try (let [sexp (read-string (:code state))
+             result (binding [*ns* (find-ns 'parensymphony.core)] (eval sexp))]
+         (assoc state :result result))
+       (catch RuntimeException ex (assoc state :error (.getMessage ex)))))
+
+(defmethod key-pressed-functions ":enter" [key-state state]
+  (if (:pressing-alt? state)
+    (eval-code state)
+    state))
 
 (defmethod key-pressed-functions :default [key-state state]
-  (println (:key-as-keyword-str key-state))
-  (println (keyword?  (:key-as-keyword-str key-state)))
-  (println (string? (:key-as-keyword-str key-state)))
-
   (play-with-key state)
   (-> state
       (update-in [:scale-index] inc-index)
@@ -174,6 +197,9 @@
 (defmethod key-released-functions ":control" [key-state state]
   (assoc state :pressing-ctr? false))
 
+(defmethod key-released-functions ":alt" [key-state state]
+  (assoc state :pressing-alt? false))
+
 (defmethod key-released-functions :default [key-state state]
   state)
 
@@ -186,6 +212,14 @@
   (let [key-state (make-key-state)]
     (key-released-functions key-state state)))
 
+(defn symphony-read [code]
+  (try (read-string code)
+       (catch RuntimeException ex nil)))
+
+(defn symphony-eval [sexp]
+  (try (eval sexp)
+       (catch RuntimeException ex nil)))
+
 (q/defsketch parensymphony
   :title "symphony"
   :setup setup
@@ -196,10 +230,11 @@
   :middleware [m/fun-mode m/pause-on-error]
   :size [window-width window-height])
 
-(def char-keycode-map (hash-map :0 48 :1 49 :2 50 :3 51 :4 52 :5 53 :6 54 :7 55 :8 56 :9 57
-                                :a 65 :b 66 :c 67 :d 68 :e 69 :f 70 :g 71 :h 72 :i 73 :j 74
-                                :k 75 :l 76 :m 77 :n 78 :o 79 :p 80 :q 81 :r 82 :s 83 :t 84
-                                :u 85 :v 86 :w 87 :x 88 :y 89 :z 90))
+(def char-keycode-map
+  (hash-map :0 48 :1 49 :2 50 :3 51 :4 52 :5 53 :6 54 :7 55 :8 56 :9 57
+            :a 65 :b 66 :c 67 :d 68 :e 69 :f 70 :g 71 :h 72 :i 73 :j 74
+            :k 75 :l 76 :m 77 :n 78 :o 79 :p 80 :q 81 :r 82 :s 83 :t 84
+            :u 85 :v 86 :w 87 :x 88 :y 89 :z 90))
 
 (defn char->keycode [char]
   (char-keycode-map (keyword (str char)) 55))
