@@ -86,11 +86,15 @@
   (q/text (str (:error state)) 300 450))
 
 
-(defn cursor-move-right [cursor-index]
-  (inc cursor-index))
+(defn cursor-move-right [{:keys [cursor-index code] :as state}]
+  (if (< cursor-index (count code))
+    (assoc state :cursor-index (inc cursor-index))
+    state))
 
-(defn cursor-move-left [cursor-index]
-  (dec cursor-index))
+(defn cursor-move-left [{:keys [cursor-index] :as state}]
+  (if (not= cursor-index 0)
+    (assoc state :cursor-index (dec cursor-index))
+    state))
 
 (defn split-by-index
     [strg idx] [(subs strg 0 idx) (subs strg idx (count strg))])
@@ -102,10 +106,10 @@
 (defn delete-backward-char [{:keys [code cursor-index] :as state}]
   (if (or (<= cursor-index 0) (> cursor-index (count code)))
     state
-    (assoc state
-           :code (str (subs code 0 (dec cursor-index))
-                      (subs code cursor-index (count code)))
-           :cursor-index (cursor-move-left cursor-index))))
+    (-> state
+        (assoc :code (str (subs code 0 (dec cursor-index))
+                          (subs code cursor-index (count code))))
+        (cursor-move-left))))
 
 (defn insert-paren [code cursor-index]
   (let [[left right] (split-by-index code cursor-index)]
@@ -132,37 +136,37 @@
   (-> state
       (update-in [:chord-index] inc-chord-index)
       (assoc :code (insert-paren (:code state) (:cursor-index state)))
-      (update-in [:cursor-index] cursor-move-right)))
+      (cursor-move-right)))
 
 (defmethod key-pressed-functions ":[" [key-state state]
   (play-chord-with-key state)
   (-> state
       (update-in [:chord-index] inc-chord-index)
       (assoc :code (insert-bracket (:code state) (:cursor-index state)))
-      (update-in [:cursor-index] cursor-move-right)))
+      (cursor-move-right)))
 
 (defmethod key-pressed-functions ":[" [key-state state]
   (play-chord-with-key state)
   (-> state
       (update-in [:chord-index] inc-chord-index)
       (assoc :code (insert-bracket (:code state) (:cursor-index state)))
-      (update-in [:cursor-index] cursor-move-right)))
+      (cursor-move-right)))
 
 (defmethod key-pressed-functions ": " [key-state state]
   (play-chord-with-key state)
   (-> state
       (update-in [:chord-index] inc-chord-index)
       (assoc  :code (insert-char (:code state) (q/raw-key) (:cursor-index state)))
-      (update-in [:cursor-index] cursor-move-right)))
+      (cursor-move-right)))
 
 (defmethod key-pressed-functions ":shift" [key-state state]
   state)
 
 (defmethod key-pressed-functions ":right" [key-state state]
-  (update-in state [:cursor-index] cursor-move-right))
+  (cursor-move-right state))
 
 (defmethod key-pressed-functions ":left" [key-state state]
-  (update-in state [:cursor-index] cursor-move-left))
+  (cursor-move-left state))
 
 (defmethod key-pressed-functions ":control" [key-state state]
   (assoc state :pressing-ctr? true))
@@ -202,7 +206,7 @@
       (assoc  :code (insert-char (:code state)
                                  (q/raw-key)
                                  (:cursor-index state)))
-      (update-in [:cursor-index] cursor-move-right)))
+      (cursor-move-right)))
 
 (defmulti key-released-functions (fn [key-state state]
                                    (:key-as-keyword-str key-state)))
