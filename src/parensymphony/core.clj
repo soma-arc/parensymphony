@@ -59,21 +59,32 @@
   {:pressed-key ""
    :scale-index 0 :scale-root :E3 :scale-name :phrygian
    :chord-index 0 :chord-root :C3 :chord-name :major
+   :text-size 20
    :cursor-index 0 :code ""
    :pressing-ctr? false :pressing-alt? false})
+
+(defn display-cursor [{:keys [cursor-index code] :as state}]
+  (let [x (+ 20 (q/text-width (subs code 0 cursor-index)))
+        y-start 100
+        y-end (- y-start 20)]
+    (q/stroke 0 255 0)
+    (q/line x y-start x y-end)
+    (q/line x y-start x y-end)))
 
 (defn draw [state]
   (q/background 0)
   (q/fill 255)
-  (q/text-size 20)
+  (q/text-size (:text-size state))
   (q/text (str (:pressed-key state)) 20 20)
   (q/text (:code state) 20 100)
+  (display-cursor state)
   (if (:pressing-ctr? state)
     (q/text "pressing ctr" 300 300))
   (if (:pressing-alt? state)
     (q/text "pressing alt" 300 350))
   (q/text (str (:result state)) 300 400)
   (q/text (str (:error state)) 300 450))
+
 
 (defn cursor-move-right [cursor-index]
   (inc cursor-index))
@@ -174,8 +185,10 @@
 (defn eval-code [state]
   (try (let [sexp (read-string (:code state))
              result (binding [*ns* (find-ns 'parensymphony.core)] (eval sexp))]
-         (assoc state :result result))
-       (catch RuntimeException ex (assoc state :error (.getMessage ex)))))
+         (assoc state :result result :error ""))
+       (catch RuntimeException ex (assoc state
+                                         :result ""
+                                         :error (.getMessage ex)))))
 
 (defmethod key-pressed-functions ":enter" [key-state state]
   (if (:pressing-alt? state)
