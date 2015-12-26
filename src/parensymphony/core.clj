@@ -21,6 +21,14 @@
       saw
       (* (env-gen (perc (* dur 1/2) (* dur 1/2)) :action FREE))))
 
+
+(definst saw-wave [freq 1 attack 0.01 sustain 0.4 release 0.1 vol 0.4]
+  (* (env-gen (lin attack sustain release) 1 1 0 1 FREE)
+     (saw (* freq 100))
+     vol))
+
+
+
 (definst plucked-string [note 60 amp 0.8 dur 2 decay 30 coef 0.3 gate 1]
   (let [freq   (midicps note)
         noize  (* 0.8 (white-noise))
@@ -62,7 +70,7 @@
   (q/smooth)
   (q/background 0)
   {:pressed-key ""
-   :scale-index 0 :scale-root :E3 :scale-name :phrygian
+   :scale-index 0 :scale-root :C3 :scale-name :pentatonic
    :chord-index 0 :chord-root :C3 :chord-name :major
    :code-unit-index 0 :code-list [(make-code-unit 20 100) (make-code-unit 20 200)]
    :pressing-ctr? false :pressing-alt? false})
@@ -77,7 +85,7 @@
         x (+ start-x (q/text-width (subs code (+ str-num-to-cursor line-count) cursor-index)))]
     (apply q/fill cursor-color)
     (q/text (str line-breaks "|") (- x (/ (q/text-width "|") 2)) start-y)))
-(start)
+
 (defn display-code [{:keys [start-x start-y code text-size text-color]}]
   (q/text-size text-size)
   (apply q/fill text-color)
@@ -96,7 +104,6 @@
     (q/text "pressing alt" 300 350))
   (q/text (str (:result (nth (:code-list state) (:code-unit-index state)))) 300 400)
   (q/text (str (:error (nth (:code-list state) (:code-unit-index state)))) 300 500))
-
 
 (defn cursor-move-right [{:keys [cursor-index code] :as code-unit}]
   (if (< cursor-index (count code))
@@ -177,11 +184,13 @@
 
 (defmethod key-pressed-functions ":right" [key-state
                                            {:keys [code-list code-unit-index] :as state}]
+  (plucked-string (note :E4) :dur 8)
   (-> state
       (update-code cursor-move-right)))
 
 (defmethod key-pressed-functions ":left" [key-state
                                           {:keys [code-list code-unit-index] :as state}]
+  (plucked-string (note :F4) :dur 8)
   (-> state
       (update-code cursor-move-left)))
 
@@ -204,7 +213,7 @@
 
 (defmethod key-pressed-functions ":backspace" [key-state
                                                {:keys [code-list code-unit-index] :as state}]
-  (if (:pressing-alt? state)
+  (if (:pressing-ctr? state)
     (update-code state delete-all)
     (do (play-with-key state)
         (-> state
@@ -222,7 +231,7 @@
 (defmethod key-pressed-functions ":enter" [key-state
                                            {:keys [code-list code-unit-index] :as state}]
   (let [code-unit (nth code-list code-unit-index)]
-    (if (:pressing-alt? state)
+    (if (:pressing-ctr? state)
       (update-code state eval-code)
       (do (-> state
               (update-code insert-char "\n")
@@ -238,7 +247,6 @@
 
 (defmethod key-pressed-functions :default [key-state
                                            {:keys [code-list code-unit-index] :as state}]
-  (println (q/raw-key))
   (let [code-unit (nth code-list code-unit-index)]
     (play-with-key state)
     (-> state
@@ -295,13 +303,13 @@
 (defn char->keycode [char]
   (char-keycode-map (keyword (str char)) 55))
 
-(defn gen-pattern [n]
+(defn gen-pattern [n pat]
   (cond
-    (or (number? n) (symbol? n) (keyword? n)) (map char->keycode (seq (str n)))
+    (or (number? n) (symbol? n) (keyword? n)) (map (fn [x] (choose (scale :E3 :pentatonic))) (seq (str n))) ;(take (count (str n)) pat)
     (empty? n) nil
-    :else (concat (gen-pattern (first n))
+    :else (concat (gen-pattern (first n) (next pat))
                   (list (chord :C3 :major))
-                  (gen-pattern (rest n)))))
+                  (gen-pattern (rest n) (next pat)))))
 
 (defn play [time notes sep]
   (let [note (first notes)]
@@ -318,6 +326,28 @@
   (play (now) (gen-pattern '(definst beep [freq 440]
                               (-> freq
                                   saw
-                                  (* (env-gen (perc) :action FREE))))) 300)
+                                  (* (env-gen (perc) :action FREE))))
+                           (cycle (flatten (map sort prog-55)))) 300)
   (stop)
+  (take 10 (cycle (flatten prog-55)))
+  (start)
+
+  (let [patterns [(scale :C3 :pentatonic)
+                (scale :D3 :pentatonic)
+                (scale :E3 :pentatonic)
+                (scale :F3 :pentatonic)
+                (scale :G3 :pentatonic)
+                (scale :A3 :pentatonic)
+                (scale :B3 :pentatonic)]]
+                                        ;  (play (now) (take-nth 3  (flatten (reverse patterns))) 100)
+  (play (now) (reverse (take-nth 2 (flatten (map (fn [x] (choose patterns)) patterns)))) 300)
+  ;(play (now) (take-nth 2 (flatten (map (fn [x] (choose patterns)) patterns))) 100)
+  )
 )
+
+(defn fizzbuzz [x]
+  (cond (= (rem x 15) 0) "fizzbuzz"
+        (= (rem x 5)  0) "buzz"
+        (= (rem x 3)  0) "fizz"
+        :else x))
+(start)
