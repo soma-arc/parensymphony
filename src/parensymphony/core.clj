@@ -71,7 +71,8 @@
   (q/background 0)
   {:pressed-key ""
    :chord-progression (cycle prog-55)
-   :phrase (cycle (scale :c3 :pentatonic))
+   :phrase (cycle (concat (scale :c3 :pentatonic)
+                          (reverse (scale :c3 :pentatonic))))
    :code-unit-index 0 :code-list [(make-code-unit 20 100) (make-code-unit 20 200)]
    :pressing-ctr? false :pressing-alt? false})
 
@@ -168,10 +169,14 @@
         (play-chord-with-key)
         (update-code insert-bracket)
         (update-code cursor-move-right)))
+(def cycle-2 (cycle (take-nth 2 (concat (scale :C3 :pentatonic)
+                                        (reverse (scale :c3 :pentatonic))))))
 
 (defmethod key-pressed-functions ": " [key-state
                                        {:keys [code-list code-unit-index] :as state}]
   (-> state
+      (assoc :phrase (nthrest cycle-2
+                              (int (* (rand) 8))))
       (play-chord-with-key)
       (update-code insert-char (q/raw-key))
       (update-code cursor-move-right)))
@@ -309,6 +314,7 @@
 (defn play [time notes sep]
   (let [note (first notes)]
     (cond
+      (= note 'rest) (at time)
       (seq? note) (at time (play-chord plucked-string note))
       :else (at time (plucked-string note)))
     (let [next-time (+ time sep)]
@@ -334,11 +340,33 @@
                   (scale :G3 :pentatonic)
                   (scale :A3 :pentatonic)
                   (scale :B3 :pentatonic)]]
-    (play (now) (take-nth 2 (flatten (reverse patterns))) 100)
-                                        ;    (play (now) (take-nth 2 (flatten (map (fn [x] (choose patterns)) patterns))) 100)
+;    (play (now) (flatten patterns) 100)
+;    (play (now) (nth phrases 2) 100)
+                                        ;    (play (now) (take-nth 2 (flatten (reverse patterns))) 100)
+    (play (now) (flatten (repeat 10
+                                 [(nth (scale :C2 :pentatonic) 1)
+                                  (nth (scale :C2 :pentatonic) 3)])) 300)
+    (play (now) (flatten (repeat 10
+                                 [(nth (scale :C3 :pentatonic) 3)
+                                  (nth (scale :C3 :pentatonic) 4)])) 300)
+    (play (now) (flatten (repeat 10
+                                 [(nth (scale :C4 :pentatonic) 5)
+                                  (nth (scale :C4 :pentatonic) 6)])) 300)
+                                        ; (play (now) (take-nth 2 (flatten (map (fn [x] (choose patterns)) patterns))) 100)
                                         ;(play (now) (take-nth 2 (flatten (map (fn [x] (choose patterns)) patterns))) 100)
-    )
-  )
+    )  )
+(comment
+  (let [n 30]
+    (play (now) (take 30 (nthrest (cycle (take-nth 3 (concat (scale :C2 :pentatonic)
+                                                             (reverse (scale :c2 :pentatonic)))))
+                                  (int (* (rand) 6)))) 300)
+    (play (now) (take 30 (nthrest (cycle (take-nth 2 (concat (scale :C3 :pentatonic)
+                                                             (reverse (scale :c3 :pentatonic)))))
+                                  (int (* (rand) 6)))) 300)
+    (play (now) (take 30 (nthrest (cycle (take-nth 4 (concat (scale :C4 :pentatonic)
+                                                             (reverse (scale :c4 :pentatonic)))))
+                                  (int (* (rand) 6)))) 300))
+  (play (now) (concat (scale :c3 :pentatonic) '(rest) (scale :c3 :pentatonic)) 300))
 
 (defn fizzbuzz [x]
   (cond (= (rem x 15) 0) "fizzbuzz"
@@ -346,3 +374,20 @@
         (= (rem x 3)  0) "fizz"
         :else x))
 (start)
+
+(def phrases
+  (let [standard (map (fn [x] (cycle (concat x (reverse x))))
+                      [(scale :c3 :pentatonic)
+                       (scale :d3 :pentatonic)
+                       (scale :e3 :pentatonic)
+                       (scale :f3 :pentatonic)
+                       (scale :g3 :pentatonic)
+                       (scale :a3 :pentatonic)
+                       (scale :b3 :pentatonic)
+                       ])
+        take-second (map (fn [x] (take-nth 2 x)) standard)]
+     standard))
+
+
+(defn choose-phrase []
+  (nthrest  (rand-nth phrases) (int (* (rand) 8))))
