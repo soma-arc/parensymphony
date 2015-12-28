@@ -27,8 +27,6 @@
      (saw (* freq 100))
      vol))
 
-
-
 (definst plucked-string [note 60 amp 0.8 dur 2 decay 30 coef 0.3 gate 1]
   (let [freq   (midicps note)
         noize  (* 0.8 (white-noise))
@@ -48,11 +46,13 @@
 (defn play-chord [inst a-chord]
   (doseq [note a-chord] (inst note :dur 8)))
 
-(defn play-chord-with-key [{:keys [chord-index chord-root chord-name]}]
-  (play-chord plucked-string (nth prog-55 chord-index)))
+(defn play-chord-with-key [{:keys [chord-progression] :as state}]
+  (play-chord plucked-string (first chord-progression))
+  (assoc state :chord-progression (rest chord-progression)))
 
-(defn play-with-key [{:keys [scale-index scale-root scale-name]}]
-  (plucked-string (nth (scale scale-root scale-name) scale-index)))
+(defn play-with-key [{:keys [phrase] :as state}]
+  (plucked-string (first phrase))
+  (assoc state :phrase (rest phrase)))
 
 (defn inc-index [index]
   (rem (inc index) 8))
@@ -70,8 +70,8 @@
   (q/smooth)
   (q/background 0)
   {:pressed-key ""
-   :scale-index 0 :scale-root :C3 :scale-name :pentatonic
-   :chord-index 0 :chord-root :C3 :chord-name :major
+   :chord-progression (cycle prog-55)
+   :phrase (cycle (scale :c3 :pentatonic))
    :code-unit-index 0 :code-list [(make-code-unit 20 100) (make-code-unit 20 200)]
    :pressing-ctr? false :pressing-alt? false})
 
@@ -157,25 +157,22 @@
 
 (defmethod key-pressed-functions ":(" [key-state
                                        {:keys [code-list code-unit-index] :as state}]
-  (play-chord-with-key state)
   (-> state
-      (update-in [:chord-index] inc-chord-index)
+      (play-chord-with-key)
       (update-code insert-paren)
       (update-code cursor-move-right)))
 
 (defmethod key-pressed-functions ":[" [key-state
                                        {:keys [code-list code-unit-index] :as state}]
-  (play-chord-with-key state)
   (-> state
-      (update-in [:chord-index] inc-chord-index)
-      (update-code insert-bracket)
-      (update-code cursor-move-right)))
+        (play-chord-with-key)
+        (update-code insert-bracket)
+        (update-code cursor-move-right)))
 
 (defmethod key-pressed-functions ": " [key-state
                                        {:keys [code-list code-unit-index] :as state}]
-  (play-chord-with-key state)
   (-> state
-      (update-in [:chord-index] inc-chord-index)
+      (play-chord-with-key)
       (update-code insert-char (q/raw-key))
       (update-code cursor-move-right)))
 
@@ -184,13 +181,13 @@
 
 (defmethod key-pressed-functions ":right" [key-state
                                            {:keys [code-list code-unit-index] :as state}]
-  (plucked-string (note :E4) :dur 8)
+  (plucked-string (note :E3) :dur 8)
   (-> state
       (update-code cursor-move-right)))
 
 (defmethod key-pressed-functions ":left" [key-state
                                           {:keys [code-list code-unit-index] :as state}]
-  (plucked-string (note :F4) :dur 8)
+  (plucked-string (note :F3) :dur 8)
   (-> state
       (update-code cursor-move-left)))
 
@@ -215,9 +212,8 @@
                                                {:keys [code-list code-unit-index] :as state}]
   (if (:pressing-ctr? state)
     (update-code state delete-all)
-    (do (play-with-key state)
-        (-> state
-            (update-in [:scale-index] inc-index)
+    (do (-> state
+            (play-with-key)
             (update-code delete-backward-char)))))
 
 (defn eval-code [code-unit]
@@ -248,9 +244,8 @@
 (defmethod key-pressed-functions :default [key-state
                                            {:keys [code-list code-unit-index] :as state}]
   (let [code-unit (nth code-list code-unit-index)]
-    (play-with-key state)
     (-> state
-        (update-in [:scale-index] inc-index)
+        (play-with-key)
         (update-code insert-char (q/raw-key))
         (update-code cursor-move-right))))
 
@@ -333,17 +328,17 @@
   (start)
 
   (let [patterns [(scale :C3 :pentatonic)
-                (scale :D3 :pentatonic)
-                (scale :E3 :pentatonic)
-                (scale :F3 :pentatonic)
-                (scale :G3 :pentatonic)
-                (scale :A3 :pentatonic)
-                (scale :B3 :pentatonic)]]
-                                        ;  (play (now) (take-nth 3  (flatten (reverse patterns))) 100)
-  (play (now) (reverse (take-nth 2 (flatten (map (fn [x] (choose patterns)) patterns)))) 300)
-  ;(play (now) (take-nth 2 (flatten (map (fn [x] (choose patterns)) patterns))) 100)
+                  (scale :D3 :pentatonic)
+                  (scale :E3 :pentatonic)
+                  (scale :F3 :pentatonic)
+                  (scale :G3 :pentatonic)
+                  (scale :A3 :pentatonic)
+                  (scale :B3 :pentatonic)]]
+    (play (now) (take-nth 2 (flatten (reverse patterns))) 100)
+                                        ;    (play (now) (take-nth 2 (flatten (map (fn [x] (choose patterns)) patterns))) 100)
+                                        ;(play (now) (take-nth 2 (flatten (map (fn [x] (choose patterns)) patterns))) 100)
+    )
   )
-)
 
 (defn fizzbuzz [x]
   (cond (= (rem x 15) 0) "fizzbuzz"
