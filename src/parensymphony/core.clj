@@ -71,8 +71,7 @@
   (q/background 0)
   {:pressed-key ""
    :chord-progression (cycle prog-55)
-   :phrase (cycle (concat (scale :c3 :pentatonic)
-                          (reverse (scale :c3 :pentatonic))))
+   :key-index 3 :phrase (get-penta-phrase 3)
    :code-unit-index 0 :code-list [(make-code-unit 20 100) (make-code-unit 20 200)]
    :pressing-ctr? false :pressing-alt? false})
 
@@ -169,14 +168,11 @@
         (play-chord-with-key)
         (update-code insert-bracket)
         (update-code cursor-move-right)))
-(def cycle-2 (cycle (take-nth 2 (concat (scale :C3 :pentatonic)
-                                        (reverse (scale :c3 :pentatonic))))))
 
 (defmethod key-pressed-functions ": " [key-state
                                        {:keys [code-list code-unit-index] :as state}]
   (-> state
-      (assoc :phrase (nthrest cycle-2
-                              (int (* (rand) 8))))
+      (assoc :phrase (get-penta-phrase (:key-index state)))
       (play-chord-with-key)
       (update-code insert-char (q/raw-key))
       (update-code cursor-move-right)))
@@ -303,36 +299,74 @@
 (defn char->keycode [char]
   (char-keycode-map (keyword (str char)) 55))
 
-(defn gen-pattern [n pat]
-  (cond
-    (or (number? n) (symbol? n) (keyword? n)) (map (fn [x] (choose (scale :E3 :pentatonic))) (seq (str n))) ;(take (count (str n)) pat)
-    (empty? n) nil
-    :else (concat (gen-pattern (first n) (next pat))
-                  (list (chord :C3 :major))
-                  (gen-pattern (rest n) (next pat)))))
 
-(defn play [time notes sep]
+(defn penta-scale [root]
+  (let [penta (scale root :pentatonic)]
+    (concat penta (reverse penta))))
+
+(def phrase-dic
+  (let [penta2 (penta-scale :c2)
+        penta3 (penta-scale :c3)
+        penta4 (penta-scale :c4)]
+    (hash-map 2 (for [n (range 1 4)]
+                  (cycle (take-nth n penta2)))
+              3 (for [n (range 1 4)]
+                  (cycle (take-nth n penta3)))
+              4 (for [n (range 1 4)]
+                  (cycle (take-nth n penta3))))))
+
+(defn get-penta-phrase [key-index]
+  (nthrest (choose (phrase-dic key-index (phrase-dic 3)))
+           (int (* (rand) 16))))
+
+(defn gen-pattern [key-index n]
+  (cond
+    (or (number? n) (symbol? n) (keyword? n)) (take (count (str n)) (get-penta-phrase key-index))
+    (empty? n) nil
+    :else (concat (gen-pattern key-index (first n))
+                  '(rest)
+                  (gen-pattern key-index (rest n)))))
+
+(defn play [time sep notes]
   (let [note (first notes)]
     (cond
       (= note 'rest) (at time)
       (seq? note) (at time (play-chord plucked-string note))
       :else (at time (plucked-string note)))
     (let [next-time (+ time sep)]
-      (apply-by next-time play [next-time (rest notes) sep]))))
+      (apply-by next-time play [next-time sep (rest notes)]))))
 
+
+
+(def playing? false)
+(defn play-loop []
+  (play (now) 300 (gen-pattern 2 '(definst ping [freq 440]
+                                      (-> freq
+                                          square
+                                          (* (env-gen (perc) :action FREE)))))))
+(play-loop)
+(println playing?)
 (comment
   ;;'(((((((((Lisp)))))))))
   ;;program = data = score
   ;;S expression -> phrase
-  (play (now) (gen-pattern '(definst beep [freq 440]
-                              (-> freq
-                                  saw
-                                  (* (env-gen (perc) :action FREE))))
-                           (cycle (flatten (map sort prog-55)))) 300)
+  (let []
+    (play (now) 300 (gen-pattern 2 '(definst ping [freq 440]
+                                      (-> freq
+                                          square
+                                          (* (env-gen (perc) :action FREE))))))
+    (play (now) 300 (gen-pattern 3 '(definst beep [freq 440]
+                                      (-> freq
+                                          saw
+                                          (* (env-gen (perc) :action FREE))))))
+    (play (now) 300 (gen-pattern 4 '(defn key-pressed [state event]
+                                      (let [key-state (make-key-state)]
+                                        (println key-state)
+                                        (key-pressed-functions key-state state))))))
   (stop)
   (take 10 (cycle (flatten prog-55)))
   (start)
-
+  (kill plucked-string)
   (let [patterns [(scale :C3 :pentatonic)
                   (scale :D3 :pentatonic)
                   (scale :E3 :pentatonic)
@@ -340,33 +374,55 @@
                   (scale :G3 :pentatonic)
                   (scale :A3 :pentatonic)
                   (scale :B3 :pentatonic)]]
-;    (play (now) (flatten patterns) 100)
-;    (play (now) (nth phrases 2) 100)
+                                        ;    (play (now) (flatten patterns) 100)
+                                        ;    (play (now) (nth phrases 2) 100)
                                         ;    (play (now) (take-nth 2 (flatten (reverse patterns))) 100)
-    (play (now) (flatten (repeat 10
+    (play (now) 300 (flatten (repeat 10
                                  [(nth (scale :C2 :pentatonic) 1)
-                                  (nth (scale :C2 :pentatonic) 3)])) 300)
-    (play (now) (flatten (repeat 10
+                                  (nth (scale :C2 :pentatonic) 3)])))
+    (play (now) 300 (flatten (repeat 10
                                  [(nth (scale :C3 :pentatonic) 3)
-                                  (nth (scale :C3 :pentatonic) 4)])) 300)
-    (play (now) (flatten (repeat 10
+                                  (nth (scale :C3 :pentatonic) 4)])))
+    (play (now) 300 (flatten (repeat 10
                                  [(nth (scale :C4 :pentatonic) 5)
-                                  (nth (scale :C4 :pentatonic) 6)])) 300)
+                                  (nth (scale :C4 :pentatonic) 6)])))
                                         ; (play (now) (take-nth 2 (flatten (map (fn [x] (choose patterns)) patterns))) 100)
-                                        ;(play (now) (take-nth 2 (flatten (map (fn [x] (choose patterns)) patterns))) 100)
+                                        ; (play (now) (take-nth 2 (flatten (map (fn [x] (choose patterns)) patterns))) 100)
     )  )
 (comment
-  (let [n 30]
-    (play (now) (take 30 (nthrest (cycle (take-nth 3 (concat (scale :C2 :pentatonic)
-                                                             (reverse (scale :c2 :pentatonic)))))
-                                  (int (* (rand) 6)))) 300)
-    (play (now) (take 30 (nthrest (cycle (take-nth 2 (concat (scale :C3 :pentatonic)
-                                                             (reverse (scale :c3 :pentatonic)))))
-                                  (int (* (rand) 6)))) 300)
-    (play (now) (take 30 (nthrest (cycle (take-nth 4 (concat (scale :C4 :pentatonic)
-                                                             (reverse (scale :c4 :pentatonic)))))
-                                  (int (* (rand) 6)))) 300))
-  (play (now) (concat (scale :c3 :pentatonic) '(rest) (scale :c3 :pentatonic)) 300))
+  (let []
+    (play (now) 300 (take 30 (nthrest (cycle (take-nth 3 (concat (scale :C2 :pentatonic)
+                                                                 (reverse (scale :c2 :pentatonic)))))
+                                      (int (* (rand) 6)))))
+    (play (now) 300 (take 30 (nthrest (cycle (take-nth 2 (concat (scale :C3 :pentatonic)
+                                                                 (reverse (scale :c3 :pentatonic)))))
+                                      (int (* (rand) 6)))))
+    (:id (play (now) 300 (take 30 (nthrest (cycle (take-nth 4 (concat (scale :C4 :pentatonic)
+                                                                        (reverse (scale :c4 :pentatonic)))))
+                                             (int (* (rand) 6)))))))
+  (kill-player)
+  (let []
+    (play (now) 300 (concat (get-pattern 3 2 :c2)
+                        '(rest)
+                        (get-pattern 4 3 :c2)
+                        '(rest)
+                        (get-pattern 5 3 :c2)))
+    (play (now) 300 (concat (get-pattern 4 2 :c3)
+                        '(rest)
+                        (get-pattern 4 2 :c3)
+                        '(rest )
+                        (get-pattern 4 3 :c3)))
+    (play (now) 300 (concat (get-pattern 5 4 :c4)
+                            '(rest)
+                            (get-pattern 6 2 :c4)
+                            '(rest)
+                            (get-pattern 3 2 :c4))))
+  (play (now) 300 (concat (scale :c3 :pentatonic) '(rest) (scale :c3 :pentatonic))))
+
+(defn get-pattern [n th root]
+  (take n (nthrest (cycle (take-nth th (concat (scale root :pentatonic)
+                                               (reverse (scale root :pentatonic)))))
+                   (int (* (rand) 6)))))
 
 (defn fizzbuzz [x]
   (cond (= (rem x 15) 0) "fizzbuzz"
@@ -374,20 +430,3 @@
         (= (rem x 3)  0) "fizz"
         :else x))
 (start)
-
-(def phrases
-  (let [standard (map (fn [x] (cycle (concat x (reverse x))))
-                      [(scale :c3 :pentatonic)
-                       (scale :d3 :pentatonic)
-                       (scale :e3 :pentatonic)
-                       (scale :f3 :pentatonic)
-                       (scale :g3 :pentatonic)
-                       (scale :a3 :pentatonic)
-                       (scale :b3 :pentatonic)
-                       ])
-        take-second (map (fn [x] (take-nth 2 x)) standard)]
-     standard))
-
-
-(defn choose-phrase []
-  (nthrest  (rand-nth phrases) (int (* (rand) 8))))
