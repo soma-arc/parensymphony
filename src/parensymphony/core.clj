@@ -38,7 +38,6 @@
         reverb (free-verb clp 0.4 0.8 0.2)]
     (* amp (env-gen (perc 0.0001 dur) :action FREE) reverb)))
 
-
 (def prog-55 [(chord :A2 :minor)
               (chord :F2 :major)
               (chord :G2 :major)
@@ -61,9 +60,8 @@
 (defn inc-chord-index [index]
   (rem (inc index) 4))
 
-(defn make-code-unit [index x y]
-  {:index index
-   :start-x x :start-y y
+(defn make-code-unit [x y]
+  {:start-x x :start-y y
    :text-size 40 :text-color [255]
    :cursor-color [0 255 0]
    :cursor-index 0 :code ""
@@ -75,19 +73,28 @@
   {:pressed-key ""
    :chord-progression (cycle prog-55)
    :key-index 3 :phrase (get-penta-phrase 3)
-   :code-unit-index 0 :code-list [(make-code-unit 0 20 100) (make-code-unit 1 20 200)]
-   :pressing-ctr? false :pressing-alt? false})
+   :code-unit-index 0 :code-list [(make-code-unit 20 100)
+                                  (make-code-unit 20 200)
+                                  (make-code-unit 20 300)]
+   :pressing-ctr? false :pressing-alt? false
+   :play-stack []})
 
 (defn update [{:keys [code-list] :as state}]
-  (assoc state :code-list (assoc code-list 0
-                                 (let [{:keys [index playing-millis playing? end-millis] :as code-unit} (nth code-list 0)
-                                       playing-millis (+ playing-millis 16)]
-                                   (if playing?
-                                     (if (> playing-millis end-millis)
-                                       (nth (:code-list (play-start state index)) index)
-                                       (assoc code-unit :playing-millis playing-millis))
-                                     code-unit)))))
-
+  (-> state
+      (assoc :code-list (loop [i 0 new-code-list code-list]
+                          (if (< i (count code-list))
+                            (recur (inc i) (assoc new-code-list i
+                                                  (let [{:keys [playing-millis playing? end-millis]
+                                                         :as code-unit} (nth code-list i)
+                                                         playing-millis (+ playing-millis 16)]
+                                                    (if playing?
+                                                      (if (> playing-millis end-millis)
+                                                        (nth (:code-list (play-start state i)) i)
+                                                        (assoc code-unit :playing-millis playing-millis))
+                                                      code-unit))))
+                            new-code-list)))))
+(start)
+(stop)
 (defn display-cursor [{:keys [start-x start-y text-size cursor-index code cursor-color]}]
   (let [c (map count (clojure.string/split code #"\n"))
         [cur-line-index line-count str-num-to-cursor line-breaks]
@@ -178,9 +185,9 @@
 (defmethod key-pressed-functions ":[" [key-state
                                        {:keys [code-list code-unit-index] :as state}]
   (-> state
-        (play-chord-with-key)
-        (update-code insert-bracket)
-        (update-code cursor-move-right)))
+      (play-chord-with-key)
+      (update-code insert-bracket)
+      (update-code cursor-move-right)))
 
 (defmethod key-pressed-functions ": " [key-state
                                        {:keys [code-list code-unit-index] :as state}]
@@ -219,12 +226,14 @@
 (defn play-start [{:keys [code-list] :as state}
                   code-unit-index]
   (let [{:keys [code] :as code-unit} (nth code-list code-unit-index)
-        pattern (try (gen-pattern 2 (read-string code))
-                     (catch RuntimeException ex nil))
-        length (* 300 (count pattern))]
+        key-index (+ code-unit-index 2)
+        pattern (try (gen-pattern key-index (read-string code))
+                     (catch RuntimeException ex '(rest)))
+        step-millis 300
+        length (* step-millis (count pattern))]
     (if (nil? pattern)
       state
-      (do (play (now) 300 pattern)
+      (do (play (now) step-millis pattern)
           (assoc state :code-list (assoc code-list code-unit-index
                                          (assoc code-unit :playing-millis 0 :playing? true :end-millis length)))))))
 
@@ -442,7 +451,6 @@
                                                                         (reverse (scale :c4 :pentatonic)))))
                                            (int (* (rand) 6)))))))
 
-  (kill-player)
   (let []
     (play (now) 300 (concat (get-pattern 3 2 :c2)
                         '(rest)
