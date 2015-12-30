@@ -43,6 +43,65 @@
               (chord :G2 :major)
               (chord :A2 :minor)])
 
+(defn penta-scale [root]
+  (let [penta (scale root :pentatonic)]
+    (concat penta (reverse penta))))
+
+(def phrase-dic
+  (let [penta1 (penta-scale :c1)
+        penta2 (penta-scale :c2)
+        penta3 (penta-scale :c3)
+        penta4 (penta-scale :c4)
+        penta5 (penta-scale :c5)]
+    (hash-map 1 (for [n (range 1 4)]
+                  (cycle (take-nth n penta1)))
+              2 (for [n (range 1 4)]
+                  (cycle (take-nth n penta2)))
+              3 (for [n (range 1 4)]
+                  (cycle (take-nth n penta3)))
+              4 (for [n (range 1 4)]
+                  (cycle (take-nth n penta3)))
+              5 (for [n (range 1 4)]
+                  (cycle (take-nth n penta5))))))
+
+(defn get-penta-phrase [key-index]
+  (nthrest (choose (phrase-dic key-index (phrase-dic 3)))
+           (int (* (rand) 16))))
+
+(defn gen-pattern [key-index n]
+  (cond
+    (or (number? n) (symbol? n) (keyword? n)) (take (count (str n)) (get-penta-phrase key-index))
+    (empty? n) nil
+    :else (concat (gen-pattern key-index (first n))
+                  '(rest)
+                  (gen-pattern key-index (rest n)))))
+
+(defn play [time sep notes]
+  (let [note (first notes)]
+    (cond
+      (= note 'rest) (at time)
+      (seq? note) (at time (play-chord plucked-string note))
+      :else (at time (plucked-string note)))
+    (let [next-time (+ time sep)]
+      (apply-by next-time play [next-time sep (rest notes)]))))
+
+(defn play-start [{:keys [code-list] :as state}
+                  code-unit-index]
+  (let [{:keys [code] :as code-unit} (nth code-list code-unit-index)
+        key-index (+ code-unit-index 2)
+        pattern (try (gen-pattern key-index (read-string code))
+                     (catch RuntimeException ex '(rest)))
+        step-millis 300
+        length (* step-millis (count pattern))]
+    (if (nil? pattern)
+      state
+      (do (play (now) step-millis pattern)
+          (assoc state :code-list (assoc code-list code-unit-index
+                                         (assoc code-unit
+                                                :playing-millis 0
+                                                :playing? true
+                                                :end-millis length)))))))
+
 (defn play-chord [inst a-chord]
   (doseq [note a-chord] (inst note :dur 8)))
 
@@ -75,7 +134,8 @@
    :key-index 3 :phrase (get-penta-phrase 3)
    :code-unit-index 0 :code-list [(make-code-unit 20 100)
                                   (make-code-unit 20 200)
-                                  (make-code-unit 20 300)]
+                                  (make-code-unit 20 300)
+                                  (make-code-unit 20 400)]
    :pressing-ctr? false :pressing-alt? false
    :play-stack []})
 
@@ -93,8 +153,7 @@
                                                         (assoc code-unit :playing-millis playing-millis))
                                                       code-unit))))
                             new-code-list)))))
-(start)
-(stop)
+
 (defn display-cursor [{:keys [start-x start-y text-size cursor-index code cursor-color]}]
   (let [c (map count (clojure.string/split code #"\n"))
         [cur-line-index line-count str-num-to-cursor line-breaks]
@@ -223,20 +282,6 @@
 (defmethod key-pressed-functions ":control" [key-state state]
   (assoc state :pressing-ctr? true))
 
-(defn play-start [{:keys [code-list] :as state}
-                  code-unit-index]
-  (let [{:keys [code] :as code-unit} (nth code-list code-unit-index)
-        key-index (+ code-unit-index 2)
-        pattern (try (gen-pattern key-index (read-string code))
-                     (catch RuntimeException ex '(rest)))
-        step-millis 300
-        length (* step-millis (count pattern))]
-    (if (nil? pattern)
-      state
-      (do (play (now) step-millis pattern)
-          (assoc state :code-list (assoc code-list code-unit-index
-                                         (assoc code-unit :playing-millis 0 :playing? true :end-millis length)))))))
-
 (defmethod key-pressed-functions ":alt" [key-state state]
   (-> state
       (assoc :pressing-alt? true)))
@@ -264,9 +309,20 @@
                                            {:keys [code-list code-unit-index] :as state}]
   (let [code-unit (nth code-list code-unit-index)]
     (if (:pressing-ctr? state)
-      (-> state
-          (update-code eval-code)
-          (play-start code-unit-index))
+      (do (stop)
+          (-> state
+              (update-code eval-code)
+              (assoc :code-list (loop [i 0 new-code-list code-list]
+                          (if (< i (count code-list))
+                            (recur (inc i) (assoc new-code-list i
+                                                  (let [{:keys [playing-millis playing? end-millis]
+                                                         :as code-unit} (nth code-list i)
+                                                         playing-millis (+ playing-millis 16)]
+                                                    (if playing?
+                                                      (nth (:code-list (play-start state i)) i)
+                                                      code-unit))))
+                            new-code-list)))
+              (play-start code-unit-index)))
       (-> state
           (update-code insert-char "\n")
           (update-code cursor-move-right)))))
@@ -336,49 +392,6 @@
 (defn char->keycode [char]
   (char-keycode-map (keyword (str char)) 55))
 
-
-(defn penta-scale [root]
-  (let [penta (scale root :pentatonic)]
-    (concat penta (reverse penta))))
-
-(def phrase-dic
-  (let [penta1 (penta-scale :c1)
-        penta2 (penta-scale :c2)
-        penta3 (penta-scale :c3)
-        penta4 (penta-scale :c4)
-        penta5 (penta-scale :c5)]
-    (hash-map 1 (for [n (range 1 4)]
-                  (cycle (take-nth n penta1)))
-              2 (for [n (range 1 4)]
-                  (cycle (take-nth n penta2)))
-              3 (for [n (range 1 4)]
-                  (cycle (take-nth n penta3)))
-              4 (for [n (range 1 4)]
-                  (cycle (take-nth n penta3)))
-              5 (for [n (range 1 4)]
-                  (cycle (take-nth n penta5))))))
-
-(defn get-penta-phrase [key-index]
-  (nthrest (choose (phrase-dic key-index (phrase-dic 3)))
-           (int (* (rand) 16))))
-
-(defn gen-pattern [key-index n]
-  (cond
-    (or (number? n) (symbol? n) (keyword? n)) (take (count (str n)) (get-penta-phrase key-index))
-    (empty? n) nil
-    :else (concat (gen-pattern key-index (first n))
-                  '(rest)
-                  (gen-pattern key-index (rest n)))))
-
-(defn play [time sep notes]
-  (let [note (first notes)]
-    (cond
-      (= note 'rest) (at time)
-      (seq? note) (at time (play-chord plucked-string note))
-      :else (at time (plucked-string note)))
-    (let [next-time (+ time sep)]
-      (apply-by next-time play [next-time sep (rest notes)]))))
-
 (defn play-loop []
   (play (now) 300 (gen-pattern 2 '(definst ping [freq 440]
                                       (-> freq
@@ -390,18 +403,19 @@
   ;;program = data = score
   ;;S expression -> phrase
   (let []
-    (play (now) 300 (gen-pattern 1 '(definst ping [freq 440]
-                                      (-> freq
-                                          square
-                                          (* (env-gen (perc) :action FREE))))))
-    (play (now) 300 (gen-pattern 2 '(definst ping [freq 440]
-                                      (-> freq
-                                          square
-                                          (* (env-gen (perc) :action FREE))))))
-    (play (now) 300 (gen-pattern 3 '(definst beep [freq 440]
-                                      (-> freq
-                                          saw
-                                          (* (env-gen (perc) :action FREE))))))
+    (stop)
+    (play (now) 300  (gen-pattern 1 '(definst ping [freq 440]
+                                         (-> freq
+                                             square
+                                             (* (env-gen (perc) :action FREE))))))
+    (play (now) 300  (gen-pattern 2 '(definst ping [freq 440]
+                                         (-> freq
+                                             square
+                                             (* (env-gen (perc) :action FREE))))))
+    (play (now) 300  (gen-pattern 3 '(definst beep [freq 440]
+                                         (-> freq
+                                             saw
+                                             (* (env-gen (perc) :action FREE))))))
     (play (now) 300 (gen-pattern 4 '(defn key-pressed [state event]
                                       (let [key-state (make-key-state)]
                                         (println key-state)
