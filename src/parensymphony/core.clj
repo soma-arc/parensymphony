@@ -6,26 +6,10 @@
 (def window-width 1000)
 (def window-height 1000)
 
-(definst beep [freq 440]
-  (-> freq
-      saw
-      (* (env-gen (perc) :action FREE))))
-
-(definst ping [freq 440]
-  (-> freq
-      square
-      (* (env-gen (perc) :action FREE))))
-
-(definst seeth [freq 440 dur 1.0]
-  (-> freq
-      saw
-      (* (env-gen (perc (* dur 1/2) (* dur 1/2)) :action FREE))))
-
-
-(definst saw-wave [freq 1 attack 0.01 sustain 0.4 release 0.1 vol 0.4]
-  (* (env-gen (lin attack sustain release) 1 1 0 1 FREE)
-     (saw (* freq 100))
-     vol))
+(def taiko1 (sample "resources/taiko1.wav"))
+(def taiko2 (sample "resources/taiko2.wav"))
+(def taiko3 (sample "resources/taiko3.wav"))
+(def taiko4 (sample "resources/taiko4.wav"))
 
 (definst plucked-string [note 60 amp 0.8 dur 2 decay 30 coef 0.3 gate 1]
   (let [freq   (midicps note)
@@ -52,17 +36,20 @@
         penta2 (penta-scale :c2)
         penta3 (penta-scale :c3)
         penta4 (penta-scale :c4)
-        penta5 (penta-scale :c5)]
-    (hash-map 1 (for [n (range 1 4)]
+        penta5 (penta-scale :c5)
+        penta6 (penta-scale :c6)]
+    (hash-map 1 (for [n (range 1 5)]
                   (cycle (take-nth n penta1)))
-              2 (for [n (range 1 4)]
+              2 (for [n (range 1 5)]
                   (cycle (take-nth n penta2)))
-              3 (for [n (range 1 4)]
+              3 (for [n (range 1 5)]
                   (cycle (take-nth n penta3)))
-              4 (for [n (range 1 4)]
-                  (cycle (take-nth n penta3)))
-              5 (for [n (range 1 4)]
-                  (cycle (take-nth n penta5))))))
+              4 (for [n (range 1 5)]
+                  (cycle (take-nth n penta4)))
+              5 (for [n (range 1 5)]
+                  (cycle (take-nth n penta5)))
+              6 (for [n (range 1 5)]
+                  (cycle (take-nth n penta6))))))
 
 (defn get-penta-phrase [key-index]
   (nthrest (choose (phrase-dic key-index (phrase-dic 3)))
@@ -70,16 +57,21 @@
 
 (defn gen-pattern [key-index n]
   (cond
-    (or (number? n) (symbol? n) (keyword? n)) (take (count (str n)) (get-penta-phrase key-index))
+    (or (number? n) (symbol? n) (keyword? n) (char? n)) (take (count (str n)) (get-penta-phrase key-index))
     (empty? n) nil
     :else (concat (gen-pattern key-index (first n))
                   '(rest)
                   (gen-pattern key-index (rest n)))))
 
+(defn play-chord [inst a-chord]
+  (doseq [note a-chord] (inst note :dur 8)))
+
 (defn play [time sep notes]
   (let [note (first notes)]
     (cond
       (= note 'rest) (at time)
+      (= note 'taiko) (at time (taiko4))
+      (= note 'taiko-w) (at time (taiko2))
       (seq? note) (at time (play-chord plucked-string note))
       :else (at time (plucked-string note)))
     (let [next-time (+ time sep)]
@@ -95,15 +87,12 @@
         length (* step-millis (count pattern))]
     (if (nil? pattern)
       state
-      (do (play (now) step-millis pattern)
+      (do (play (now) step-millis (cycle pattern))
           (assoc state :code-list (assoc code-list code-unit-index
                                          (assoc code-unit
                                                 :playing-millis 0
                                                 :playing? true
                                                 :end-millis length)))))))
-
-(defn play-chord [inst a-chord]
-  (doseq [note a-chord] (inst note :dur 8)))
 
 (defn play-chord-with-key [{:keys [chord-progression] :as state}]
   (play-chord plucked-string (first chord-progression))
@@ -133,26 +122,15 @@
    :chord-progression (cycle prog-55)
    :key-index 3 :phrase (get-penta-phrase 3)
    :code-unit-index 0 :code-list [(make-code-unit 20 100)
-                                  (make-code-unit 20 200)
                                   (make-code-unit 20 300)
-                                  (make-code-unit 20 400)]
+                                  (make-code-unit 20 500)
+                                  (make-code-unit 20 700)]
    :pressing-ctr? false :pressing-alt? false
    :play-stack []})
 
 (defn update [{:keys [code-list] :as state}]
-  (-> state
-      (assoc :code-list (loop [i 0 new-code-list code-list]
-                          (if (< i (count code-list))
-                            (recur (inc i) (assoc new-code-list i
-                                                  (let [{:keys [playing-millis playing? end-millis]
-                                                         :as code-unit} (nth code-list i)
-                                                         playing-millis (+ playing-millis 16)]
-                                                    (if playing?
-                                                      (if (> playing-millis end-millis)
-                                                        (nth (:code-list (play-start state i)) i)
-                                                        (assoc code-unit :playing-millis playing-millis))
-                                                      code-unit))))
-                            new-code-list)))))
+  state)
+
 
 (defn display-cursor [{:keys [start-x start-y text-size cursor-index code cursor-color]}]
   (let [c (map count (clojure.string/split code #"\n"))
@@ -423,33 +401,16 @@
     (play (now) 300 (gen-pattern 5 '(definst saw-wave [freq 1 attack 0.01 sustain 0.4 release 0.1 vol 0.4]
                                       (* (env-gen (lin attack sustain release) 1 1 0 1 FREE)
                                          (saw (* freq 100))
-                                         vol)))))
+                                         vol))))
+    (play (now) 300 (fizzbuzz-seq 60))
+    (play (now) 300 (gen-seq 60))
+
+;
+                                        ;    (play (now) 300 (flatten (repeat 20 tutu-seq)))
+    )
   (stop)
-  (take 10 (cycle (flatten prog-55)))
   (start)
-  (kill plucked-string)
-  (let [patterns [(scale :C3 :pentatonic)
-                  (scale :D3 :pentatonic)
-                  (scale :E3 :pentatonic)
-                  (scale :F3 :pentatonic)
-                  (scale :G3 :pentatonic)
-                  (scale :A3 :pentatonic)
-                  (scale :B3 :pentatonic)]]
-                                        ;    (play (now) (flatten patterns) 100)
-                                        ;    (play (now) (nth phrases 2) 100)
-                                        ;    (play (now) (take-nth 2 (flatten (reverse patterns))) 100)
-    (play (now) 300 (flatten (repeat 10
-                                 [(nth (scale :C2 :pentatonic) 1)
-                                  (nth (scale :C2 :pentatonic) 3)])))
-    (play (now) 300 (flatten (repeat 10
-                                 [(nth (scale :C3 :pentatonic) 3)
-                                  (nth (scale :C3 :pentatonic) 4)])))
-    (play (now) 300 (flatten (repeat 10
-                                 [(nth (scale :C4 :pentatonic) 5)
-                                  (nth (scale :C4 :pentatonic) 6)])))
-                                        ; (play (now) (take-nth 2 (flatten (map (fn [x] (choose patterns)) patterns))) 100)
-                                        ; (play (now) (take-nth 2 (flatten (map (fn [x] (choose patterns)) patterns))) 100)
-    ))
+  )
 
 
 
@@ -463,24 +424,25 @@
                                       (int (* (rand) 6)))))
     (:id (play (now) 300 (take 30 (nthrest (cycle (take-nth 4 (concat (scale :C4 :pentatonic)
                                                                         (reverse (scale :c4 :pentatonic)))))
-                                           (int (* (rand) 6)))))))
+                                           (int (* (rand) 6))))))
+    (play (now) 300 (flatten (map fizzbuzz (range 100)))))
 
   (let []
-    (play (now) 300 (concat (get-pattern 3 2 :c2)
+    (play (now) 300 (concat (get-pattern 3 2 :c5)
                         '(rest)
-                        (get-pattern 4 3 :c2)
+                        (get-pattern 4 3 :c5)
                         '(rest)
-                        (get-pattern 5 3 :c2)))
+                        (get-pattern 5 3 :c5)))
     (play (now) 300 (concat (get-pattern 4 2 :c3)
                         '(rest)
                         (get-pattern 4 2 :c3)
                         '(rest )
                         (get-pattern 4 3 :c3)))
-    (play (now) 300 (concat (get-pattern 5 4 :c4)
+    (play (now) 300 (concat (get-pattern 5 4 :c6)
                             '(rest)
-                            (get-pattern 6 2 :c4)
+                            (get-pattern 6 2 :c6)
                             '(rest)
-                            (get-pattern 3 2 :c4))))
+                            (get-pattern 3 2 :c6))))
   (play (now) 300 (concat (scale :c3 :pentatonic) '(rest) (scale :c3 :pentatonic))))
 
 (defn get-pattern [n th root]
@@ -489,8 +451,40 @@
                    (int (* (rand) 6)))))
 
 (defn fizzbuzz [x]
-  (cond (= (rem x 15) 0) "fizzbuzz"
-        (= (rem x 5)  0) "buzz"
-        (= (rem x 3)  0) "fizz"
-        :else x))
+  (cond (= (rem x 15) 0) '(taiko taiko-w)
+        (= (rem x 5)  0) 'taiko
+        (= (rem x 3)  0) 'taiko-w
+        :else 'rest))
+
+(defn fizzbuzz-seq [len]
+  (flatten (map fizzbuzz (range len))))
+
+(defn play-inst []
+  (play (now) 300 (fizzbuzz-seq 100)))
+
+
+
+(defn fizzbuzz2 [x]
+  (cond (= (rem x 35) 0) '(kotudumi rest)
+        (= (rem x 5)  0) '(kotudumi)
+        (= (rem x 7)  0) '(rest)
+        :else '(rest)))
+
+(defn gen-seq [num]
+  (flatten (repeat num (for [x (range 11)]
+                        (cond (= x 0) 'kotudumi
+                              (= x 10) 'clappers
+                              :else 'rest)))))
+
+(defn tudumi-seq [len]
+  (flatten (map (fn [x] (if (= (rem x 10) 0)
+                         'kotudumi
+                         'rest))
+                (range len))))
+
+(play-inst)
+
+
+(defn fibs [a b] (cons a (lazy-seq (fibs b (+' a b)))))
+
 (start)
