@@ -79,7 +79,7 @@
 
 (defn play-start [{:keys [code-list] :as state}
                   code-unit-index]
-  (let [{:keys [code] :as code-unit} (nth code-list code-unit-index)
+  (let [{:keys [code last-play?] :as code-unit} (nth code-list code-unit-index)
         key-index (+ code-unit-index 2)
         pattern (try (gen-pattern key-index (read-string code))
                      (catch RuntimeException ex '(rest)))
@@ -87,12 +87,15 @@
         length (* step-millis (count pattern))]
     (if (nil? pattern)
       state
-      (do (play (now) step-millis (cycle pattern))
-          (assoc state :code-list (assoc code-list code-unit-index
-                                         (assoc code-unit
-                                                :playing-millis 0
-                                                :playing? true
-                                                :end-millis length)))))))
+      (do
+        (if last-play?
+          (play (now) step-millis  pattern)
+          (play (now) step-millis (cycle pattern)))
+        (assoc state :code-list (assoc code-list code-unit-index
+                                       (assoc code-unit
+                                              :playing-millis 0
+                                              :playing? (not last-play?)
+                                              :end-millis length)))))))
 
 (defn play-chord-with-key [{:keys [chord-progression] :as state}]
   (play-chord plucked-string (first chord-progression))
@@ -113,7 +116,8 @@
    :text-size 40 :text-color [255]
    :cursor-color [0 255 0]
    :cursor-index 0 :code ""
-   :playing-millis 0 :playing? false :end-millis 0})
+   :playing-millis 0 :playing? false :end-millis 0
+   :last-play? false})
 
 (defn setup []
   (q/smooth)
@@ -197,7 +201,8 @@
 
 (def special-key-code-dic (hash-map 8 :backspace
                                     9 :tab
-                                    10 :enter))
+                                    10 :enter
+                                    80 :p))
 
 (defn make-key-state []
   {:raw-key (q/raw-key)
@@ -260,6 +265,32 @@
 (defmethod key-pressed-functions ":control" [key-state state]
   (assoc state :pressing-ctr? true))
 
+(defn kill-pattern [code-unit]
+  (assoc code-unit :last-play? true))
+
+(defn restart-all [{:keys [code-list code-unit-index] :as state}]
+  (assoc state
+         :code-list
+         (loop [i 0 new-code-list code-list]
+           (if (< i (count code-list))
+             (recur (inc i) (assoc new-code-list i
+                                   (let [{:keys [playing?] :as code-unit} (nth code-list i)]
+                                     (if playing?
+                                       (nth (:code-list (play-start state i)) i)
+                                       code-unit))))
+             new-code-list))))
+
+(defmethod key-pressed-functions ":p" [key-state {:keys [code-list code-unit-index] :as state}]
+  (if (:pressing-ctr? state)
+    (do (stop)
+        (-> state
+            (update-code kill-pattern)
+            (restart-all)))
+    (-> state
+        (play-with-key)
+        (update-code insert-char (q/raw-key))
+        (update-code cursor-move-right))))
+
 (defmethod key-pressed-functions ":alt" [key-state state]
   (-> state
       (assoc :pressing-alt? true)))
@@ -277,7 +308,8 @@
 
 (defn eval-code [code-unit]
   (try (let [sexp (read-string (:code code-unit))
-             result (binding [*ns* (find-ns 'parensymphony.core)] (eval sexp))]
+             result (binding [*ns* (find-ns 'parensymphony.core)]
+                      (eval sexp))]
          (assoc code-unit :result result :error ""))
        (catch RuntimeException ex (assoc code-unit
                                          :result ""
@@ -290,16 +322,7 @@
       (do (stop)
           (-> state
               (update-code eval-code)
-              (assoc :code-list (loop [i 0 new-code-list code-list]
-                          (if (< i (count code-list))
-                            (recur (inc i) (assoc new-code-list i
-                                                  (let [{:keys [playing-millis playing? end-millis]
-                                                         :as code-unit} (nth code-list i)
-                                                         playing-millis (+ playing-millis 16)]
-                                                    (if playing?
-                                                      (nth (:code-list (play-start state i)) i)
-                                                      code-unit))))
-                            new-code-list)))
+              (restart-all)
               (play-start code-unit-index)))
       (-> state
           (update-code insert-char "\n")
@@ -403,11 +426,7 @@
                                          (saw (* freq 100))
                                          vol))))
     (play (now) 300 (fizzbuzz-seq 60))
-    (play (now) 300 (gen-seq 60))
-
-;
-                                        ;    (play (now) 300 (flatten (repeat 20 tutu-seq)))
-    )
+    (play (now) 300 (gen-seq 60)))
   (stop)
   (start)
   )
@@ -481,9 +500,6 @@
                          'kotudumi
                          'rest))
                 (range len))))
-
-(play-inst)
-
 
 (defn fibs [a b] (cons a (lazy-seq (fibs b (+' a b)))))
 
