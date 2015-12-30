@@ -22,10 +22,22 @@
         reverb (free-verb clp 0.4 0.8 0.2)]
     (* amp (env-gen (perc 0.0001 dur) :action FREE) reverb)))
 
-(def prog-55 [(chord :A2 :minor)
-              (chord :F2 :major)
-              (chord :G2 :major)
-              (chord :A2 :minor)])
+(def chord-dic
+  (let [penta1 (scale :c1 :pentatonic)
+        penta2 (scale :c2 :pentatonic)
+        penta3 (scale :c3 :pentatonic)
+        penta4 (scale :c4 :pentatonic)
+        penta5 (scale :c5 :pentatonic)
+        penta6 (scale :c6 :pentatonic)
+        gen (fn [scales] (for [m (range 6)]
+                          (for [n (range m (+ m 3))]
+                            (nth scales n))))]
+    (hash-map 1 (gen penta1)
+              2 (gen penta2)
+              3 (gen penta3)
+              4 (gen penta4)
+              5 (gen penta5)
+              6 (gen penta6))))
 
 (defn penta-scale [root]
   (let [penta (scale root :pentatonic)]
@@ -64,7 +76,7 @@
                   (gen-pattern key-index (rest n)))))
 
 (defn play-chord [inst a-chord]
-  (doseq [note a-chord] (inst note :dur 8)))
+  (doseq [note a-chord] (inst note :dur 12)))
 
 (defn play [time sep notes]
   (let [note (first notes)]
@@ -91,11 +103,12 @@
         (if last-play?
           (play (now) step-millis  pattern)
           (play (now) step-millis (cycle pattern)))
-        (assoc state :code-list (assoc code-list code-unit-index
-                                       (assoc code-unit
-                                              :playing-millis 0
-                                              :playing? (not last-play?)
-                                              :end-millis length)))))))
+        (assoc state
+               :code-list (assoc code-list code-unit-index
+                                 (assoc code-unit
+                                        :playing-millis 0
+                                        :playing? (not last-play?)
+                                        :end-millis length)))))))
 
 (defn play-chord-with-key [{:keys [chord-progression] :as state}]
   (play-chord plucked-string (first chord-progression))
@@ -123,14 +136,15 @@
   (q/smooth)
   (q/background 0)
   {:pressed-key ""
-   :chord-progression (cycle prog-55)
-   :key-index 3 :phrase (get-penta-phrase 3)
+   :key-index 2
+   :chord-progression (cycle (chord-dic 3))
+   :phrase (get-penta-phrase 2)
    :code-unit-index 0 :code-list [(make-code-unit 20 100)
                                   (make-code-unit 20 300)
                                   (make-code-unit 20 500)
                                   (make-code-unit 20 700)]
    :pressing-ctr? false :pressing-alt? false
-   :play-stack []})
+   :start-millis 0})
 
 (defn update [{:keys [code-list] :as state}]
   state)
@@ -232,10 +246,10 @@
       (update-code cursor-move-right)))
 
 (defmethod key-pressed-functions ": " [key-state
-                                       {:keys [code-list code-unit-index] :as state}]
+                                       {:keys [code-list code-unit-index key-index] :as state}]
   (-> state
-      (assoc :phrase (get-penta-phrase (:key-index state)))
       (play-chord-with-key)
+      (assoc :phrase (get-penta-phrase key-index))
       (update-code insert-char (q/raw-key))
       (update-code cursor-move-right)))
 
@@ -244,23 +258,35 @@
 
 (defmethod key-pressed-functions ":right" [key-state
                                            {:keys [code-list code-unit-index] :as state}]
-  (plucked-string (note :E3) :dur 8)
   (-> state
+      (play-with-key)
       (update-code cursor-move-right)))
 
 (defmethod key-pressed-functions ":left" [key-state
                                           {:keys [code-list code-unit-index] :as state}]
-  (plucked-string (note :F3) :dur 8)
   (-> state
+      (play-with-key)
       (update-code cursor-move-left)))
 
 (defmethod key-pressed-functions ":up" [key-state
                                         {:keys [code-list code-unit-index] :as state}]
-  (assoc state :code-unit-index (mod (dec code-unit-index) (count code-list))))
+  (let [code-unit-index (mod (dec code-unit-index) (count code-list))
+        key-index (+ 2 code-unit-index)]
+    (assoc state
+           :code-unit-index code-unit-index
+           :key-index key-index
+           :phrase (get-penta-phrase key-index)
+           :chord-progression (cycle (chord-dic (+ 1 key-index))))))
 
 (defmethod key-pressed-functions ":down" [key-state
-                                        {:keys [code-list code-unit-index] :as state}]
-  (assoc state :code-unit-index (mod (inc code-unit-index) (count code-list))))
+                                          {:keys [code-list code-unit-index] :as state}]
+  (let [code-unit-index (mod (inc code-unit-index) (count code-list))
+        key-index (+ 2 code-unit-index)]
+    (assoc state
+           :code-unit-index code-unit-index
+           :key-index key-index
+           :phrase (get-penta-phrase key-index)
+           :chord-progression (cycle (chord-dic (+ 1 key-index))))))
 
 (defmethod key-pressed-functions ":control" [key-state state]
   (assoc state :pressing-ctr? true))
@@ -268,8 +294,10 @@
 (defn kill-pattern [code-unit]
   (assoc code-unit :last-play? true))
 
-(defn restart-all [{:keys [code-list code-unit-index] :as state}]
+(defn restart-all [{:keys [code-list code-unit-index start-millis] :as state}]
+  (stop)
   (assoc state
+         :start-millis (now)
          :code-list
          (loop [i 0 new-code-list code-list]
            (if (< i (count code-list))
@@ -282,10 +310,9 @@
 
 (defmethod key-pressed-functions ":p" [key-state {:keys [code-list code-unit-index] :as state}]
   (if (:pressing-ctr? state)
-    (do (stop)
-        (-> state
-            (update-code kill-pattern)
-            (restart-all)))
+    (-> state
+        (update-code kill-pattern)
+        (restart-all))
     (-> state
         (play-with-key)
         (update-code insert-char (q/raw-key))
@@ -319,11 +346,10 @@
                                            {:keys [code-list code-unit-index] :as state}]
   (let [code-unit (nth code-list code-unit-index)]
     (if (:pressing-ctr? state)
-      (do (stop)
-          (-> state
-              (update-code eval-code)
-              (restart-all)
-              (play-start code-unit-index)))
+      (-> state
+          (update-code eval-code)
+          (restart-all)
+          (play-start code-unit-index))
       (-> state
           (update-code insert-char "\n")
           (update-code cursor-move-right)))))
@@ -425,8 +451,7 @@
                                       (* (env-gen (lin attack sustain release) 1 1 0 1 FREE)
                                          (saw (* freq 100))
                                          vol))))
-    (play (now) 300 (fizzbuzz-seq 60))
-    (play (now) 300 (gen-seq 60)))
+    (play (now) 300 (fizzbuzz-seq 60)))
   (stop)
   (start)
   )
