@@ -3,14 +3,11 @@
   (require [quil.core :as q]
            [quil.middleware :as m]))
 
-(def window-width 1000)
-(def window-height 1000)
-
 (def taiko1 (sample "resources/taiko1.wav"))
 (def taiko2 (sample "resources/taiko2.wav"))
 (def taiko3 (sample "resources/taiko3.wav"))
 (def taiko4 (sample "resources/taiko4.wav"))
-
+(start)
 (definst plucked-string [note 60 amp 0.8 dur 2 decay 30 coef 0.3 gate 1]
   (let [freq   (midicps note)
         noize  (* 0.8 (white-noise))
@@ -111,8 +108,8 @@
                                         :end-millis length)))))))
 
 (defn play-chord-with-key [{:keys [chord-progression] :as state}]
-  (play-chord plucked-string (first chord-progression))
-  (assoc state :chord-progression (rest chord-progression)))
+  (play-chord plucked-string (choose chord-progression))
+  (assoc state :chord-progression  chord-progression))
 
 (defn play-with-key [{:keys [phrase] :as state}]
   (plucked-string (first phrase))
@@ -124,61 +121,92 @@
 (defn inc-chord-index [index]
   (rem (inc index) 4))
 
-(defn make-code-unit [x y]
-  {:start-x x :start-y y
-   :text-size 40 :text-color [255]
-   :cursor-color [0 255 0]
-   :cursor-index 0 :code ""
-   :playing-millis 0 :playing? false :end-millis 0
-   :last-play? false})
+(def +code-margin-left+ 20)
+
+(defn make-code-unit [x y width height]
+  (let [text-size 37]
+    {:start-x x :start-y y
+     :code-start-x (+ x +code-margin-left+)
+     :code-start-y (+ y text-size)
+     :text-size text-size :text-color [255]
+     :selected-bg-color [50]
+     :cursor-color [0 255 0]
+     :width width :height height
+     :cursor-index 0 :code ""
+     :playing-millis 0 :playing? false :end-millis 0
+     :last-play? false}))
 
 (defn setup []
   (q/smooth)
   (q/background 0)
   {:pressed-key ""
    :key-index 2
-   :chord-progression (cycle (chord-dic 3))
+   :chord-progression (chord-dic 3)
    :phrase (get-penta-phrase 2)
-   :code-unit-index 0 :code-list [(make-code-unit 20 100)
-                                  (make-code-unit 20 300)
-                                  (make-code-unit 20 500)
-                                  (make-code-unit 20 700)]
+   :code-unit-index 0
+   :code-list [(make-code-unit 0 50
+                               (/ (q/screen-width) 2) 350)
+               (make-code-unit 0 400
+                               (/ (q/screen-width) 2) 350)
+               (make-code-unit (/ (q/screen-width) 2) 50
+                               (/ (q/screen-width) 2) 350)
+               (make-code-unit (/ (q/screen-width) 2) 400
+                               (/ (q/screen-width) 2) 350)]
    :pressing-ctr? false :pressing-alt? false
    :start-millis 0})
 
-(defn update [{:keys [code-list] :as state}]
+(defn update-state [{:keys [code-list] :as state}]
   state)
 
 
-(defn display-cursor [{:keys [start-x start-y text-size cursor-index code cursor-color]}]
+(defn display-cursor [{:keys [code-start-x code-start-y text-size cursor-index code cursor-color]}]
   (let [c (map count (clojure.string/split code #"\n"))
         [cur-line-index line-count str-num-to-cursor line-breaks]
         (loop [i 0 acc 0 line-breaks ""]
           (if (and (< i (count c)) (> (- cursor-index i) (+ (nth c i) acc)))
             (recur (inc i) (+ acc (nth c i)) (str "\n" line-breaks))
             [(- cursor-index acc i) i acc line-breaks]))
-        x (+ start-x (q/text-width (subs code (+ str-num-to-cursor line-count) cursor-index)))]
+        x (+ code-start-x (q/text-width (subs code (+ str-num-to-cursor line-count) cursor-index)))]
     (apply q/fill cursor-color)
-    (q/text (str line-breaks "|") (- x (/ (q/text-width "|") 2)) start-y)))
+    (q/text (str line-breaks "|") (- x (/ (q/text-width "|") 2)) code-start-y)))
 
-(defn display-code [{:keys [start-x start-y code text-size text-color]}]
+(defn display-code [{:keys [start-x start-y code-start-x code-start-y width height
+                            code text-size text-color selected-bg-color]
+                     :as code-unit}
+                    index code-unit-index]
+  (if (= index code-unit-index)
+    (q/with-fill selected-bg-color
+      (q/rect start-x start-y
+              width height)))
   (q/text-size text-size)
   (apply q/fill text-color)
-  (q/text code start-x start-y))
+  (q/text code code-start-x code-start-y))
 
-(defn draw [state]
+(defn draw [{:keys [code-list code-unit-index pressing-ctr?] :as state}]
   (q/background 0)
   (q/fill 255)
-  (doseq [code-unit (:code-list state)]
-    (display-code code-unit)
+  (doseq [[code-unit index] (map list code-list (range (count code-list)))]
+    (println code-unit-index)
+    (display-code code-unit index code-unit-index)
     (display-cursor code-unit))
-  (q/text-size 20)
+  (q/text-size 25)
+  (q/with-stroke [255]
+    (q/line 0 50
+            (q/screen-width) 50)
+    (q/line (/ (q/screen-width) 2) 50
+            (/ (q/screen-width) 2) 750)
+    (q/line 0 400
+            (q/screen-width) 400)
+    (q/line 0 750
+            (q/screen-width) 750))
   (if (:pressing-ctr? state)
     (q/text "pressing ctr" 300 300))
-  (if (:pressing-alt? state)
-    (q/text "pressing alt" 300 350))
-  (q/text (str (:result (nth (:code-list state) (:code-unit-index state)))) 300 400)
-  (q/text (str (:error (nth (:code-list state) (:code-unit-index state)))) 300 500))
+  (q/text (str (:result (nth (:code-list state)
+                             (:code-unit-index state))))
+          300 400)
+  (q/text (str (:error (nth (:code-list state)
+                            (:code-unit-index state))))
+          300 500))
 
 (defn cursor-move-right [{:keys [cursor-index code] :as code-unit}]
   (if (< cursor-index (count code))
@@ -276,7 +304,7 @@
            :code-unit-index code-unit-index
            :key-index key-index
            :phrase (get-penta-phrase key-index)
-           :chord-progression (cycle (chord-dic (+ 1 key-index))))))
+           :chord-progression (chord-dic (+ 1 key-index)))))
 
 (defmethod key-pressed-functions ":down" [key-state
                                           {:keys [code-list code-unit-index] :as state}]
@@ -286,7 +314,7 @@
            :code-unit-index code-unit-index
            :key-index key-index
            :phrase (get-penta-phrase key-index)
-           :chord-progression (cycle (chord-dic (+ 1 key-index))))))
+           :chord-progression (chord-dic (+ 1 key-index)))))
 
 (defmethod key-pressed-functions ":control" [key-state state]
   (assoc state :pressing-ctr? true))
@@ -351,12 +379,14 @@
           (restart-all)
           (play-start code-unit-index))
       (-> state
+          (play-chord-with-key)
           (update-code insert-char "\n")
           (update-code cursor-move-right)))))
 
 (defmethod key-pressed-functions ":tab" [key-state
                                            {:keys [code-list code-unit-index] :as state}]
   (-> state
+      (play-chord-with-key)
       (update-code insert-char "  ")
       (update-code cursor-move-right)
       (update-code cursor-move-right)))
@@ -403,12 +433,13 @@
     :title "symphony"
     :setup setup
     :draw draw
-    :update update
+    :update update-state
     :key-pressed key-pressed
     :key-released key-released
-    :renderer :p2d
+    :features [:present
+               :keep-on-top]
     :middleware [m/fun-mode m/pause-on-error]
-    :size [window-width window-height]))
+    :size :fullscreen))
 
 (def char-keycode-map
   (hash-map :0 48 :1 49 :2 50 :3 51 :4 52 :5 53 :6 54 :7 55 :8 56 :9 57
@@ -505,7 +536,6 @@
 
 (defn play-inst []
   (play (now) 300 (fizzbuzz-seq 100)))
-
 
 
 (defn fizzbuzz2 [x]
