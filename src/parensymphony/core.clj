@@ -132,7 +132,7 @@
     (q/text-size text-size)
     {:start-x x :start-y y
      :code-start-x (+ x +code-margin-left+)
-     :code-start-y (+ y text-size)
+     :code-start-y (+ y text-size 5)
      :text-size text-size :text-color [255]
      :selected-bg-color [50]
      :cursor-color [0 255 0]
@@ -150,6 +150,11 @@
            :message message
            :code-start-x (+ x +code-margin-left+ (q/text-width message)))))
 
+(def +header-height+ 80)
+(def +code-unit-height+ 400)
+(def +start-second-row+ (+ +header-height+ +code-unit-height+))
+(def +start-repl-row+ (+ +header-height+ +code-unit-height+ +code-unit-height+))
+
 (defn setup []
   (q/smooth)
   (q/background 0)
@@ -159,16 +164,17 @@
    :phrase (get-penta-phrase 2)
    :code-unit-index 0
    :repl-index 4
-   :code-list [(make-code-unit 0 50
-                               (/ (q/screen-width) 2) 350)
-               (make-code-unit 0 400
-                               (/ (q/screen-width) 2) 350)
-               (make-code-unit (/ (q/screen-width) 2) 50
-                               (/ (q/screen-width) 2) 350)
-               (make-code-unit (/ (q/screen-width) 2) 400
-                               (/ (q/screen-width) 2) 350)
-               (make-repl-pane 0 750
-                               (q/screen-width) (- (q/screen-height) 750))]
+   :code-list [(make-code-unit 0 +header-height+
+                               (/ (q/screen-width) 2) +code-unit-height+)
+               (make-code-unit 0 +start-second-row+
+                               (/ (q/screen-width) 2) +code-unit-height+)
+               (make-code-unit (/ (q/screen-width) 2) +header-height+
+                               (/ (q/screen-width) 2) +code-unit-height+)
+               (make-code-unit (/ (q/screen-width) 2) +start-second-row+
+                               (/ (q/screen-width) 2) +code-unit-height+)
+               (make-repl-pane 0 +start-repl-row+
+                               (q/screen-width) (- (q/screen-height)
+                                                   +start-repl-row+))]
    :pressing-ctr? false :pressing-alt? false
    :start-millis 0})
 
@@ -203,15 +209,21 @@
   (q/with-fill text-color
     (q/text code code-start-x code-start-y))
   (display-cursor code-unit)
+  (q/text-size 30)
   (if (not= "" result)
     (q/with-fill result-color
-      (q/text (str "-> " result) code-start-x (- (+ start-y height) 10))))
+      (q/text (str "-> " result)
+              code-start-x (- (+ start-y height) text-size 10)
+              width (+ text-size 10))))
   (if (not= "" error)
     (q/with-fill error-color
-      (q/text (str "-> " error) code-start-x (- (+ start-y height) 10)))))
+      (q/text (str "-> " error)
+              code-start-x (- (+ start-y height) text-size 10)
+              (- width code-start-x) (+ text-size 10)))))
 
 (defn display-repl [{:keys [start-x start-y code-start-x code-start-y width height
-                            code text-size text-color selected-bg-color]
+                            code text-size text-color selected-bg-color
+                            result error result-color error-color]
                      :as code-unit}
                     index code-unit-index]
   (if (= index code-unit-index) (fill-selected-bg code-unit))
@@ -219,17 +231,28 @@
   (q/with-fill text-color
     (q/text code code-start-x code-start-y)
     (q/text (:message code-unit) (+ +code-margin-left+ start-x) code-start-y))
-  (display-cursor code-unit))
+  (display-cursor code-unit)
+  (q/text-size 30)
+  (if (not= "" result)
+    (q/with-fill result-color
+      (q/text (str "-> " result)
+              (+ start-x (/ (q/screen-width) 2))
+              code-start-y)))
+  (if (not= "" error)
+    (q/with-fill error-color
+      (q/text (str "-> " error)
+              (+ start-x (/ (q/screen-width) 2))
+              code-start-y))))
 
 (defn display-header [{:keys [code-unit-index repl-index]}]
   (q/with-fill [255]
-    (q/text-size 25)
-    (q/text "(((((((((Parensymphony)))))))))" 10 30)
+    (q/text-size 30)
+    (q/text "(((((((((Parensymphony)))))))))" 10 (- +header-height+ 30))
     (if (= code-unit-index repl-index)
       (q/text "(current-pane) -> REPL"
-              (- (/ (q/screen-width) 2) 150) 30)
+              (- (/ (q/screen-width) 2) 150) (- +header-height+ 30))
       (q/text (str "(current-pane) -> pane-" code-unit-index)
-              (- (/ (q/screen-width) 2) 150) 30 30))))
+              (- (/ (q/screen-width) 2) 150) (- +header-height+ 30)))))
 
 (defn draw [{:keys [code-list code-unit-index pressing-ctr? repl-index] :as state}]
   (q/background 0)
@@ -239,14 +262,14 @@
       (display-repl code-unit index code-unit-index)
       (display-code-pane code-unit index code-unit-index)))
   (q/with-stroke [255]
-    (q/line 0 50
-            (q/screen-width) 50)
-    (q/line (/ (q/screen-width) 2) 50
-            (/ (q/screen-width) 2) 750)
-    (q/line 0 400
-            (q/screen-width) 400)
-    (q/line 0 750
-            (q/screen-width) 750)))
+    (q/line 0 +header-height+
+            (q/screen-width) +header-height+)
+    (q/line (/ (q/screen-width) 2) +header-height+
+            (/ (q/screen-width) 2) +start-repl-row+)
+    (q/line 0 +start-second-row+
+            (q/screen-width) +start-second-row+)
+    (q/line 0 +start-repl-row+
+            (q/screen-width) +start-repl-row+)))
 
 (defn cursor-move-right [{:keys [cursor-index code] :as code-unit}]
   (if (< cursor-index (count code))
@@ -391,7 +414,9 @@
       (assoc :pressing-alt? true)))
 
 (defn delete-all [code-unit]
-  (assoc code-unit :code "" :cursor-index 0))
+  (assoc code-unit
+         :code "" :cursor-index 0
+         :result "" :error ""))
 
 (defmethod key-pressed-functions ":backspace" [key-state
                                                {:keys [code-list code-unit-index] :as state}]
@@ -411,13 +436,18 @@
                                          :error (.getMessage ex)))))
 
 (defmethod key-pressed-functions ":enter" [key-state
-                                           {:keys [code-list code-unit-index] :as state}]
+                                           {:keys [code-list code-unit-index
+                                                   repl-index]
+                                            :as state}]
   (let [code-unit (nth code-list code-unit-index)]
     (if (:pressing-ctr? state)
-      (-> state
-          (update-code eval-code)
-          (restart-all)
-          (play-start code-unit-index))
+      (if (= code-unit-index repl-index)
+        (-> state
+            (update-code eval-code))
+        (-> state
+            (update-code eval-code)
+            (restart-all)
+            (play-start code-unit-index)))
       (-> state
           (play-chord-with-key)
           (update-code insert-char "\n")
@@ -560,11 +590,6 @@
                             (get-pattern 3 2 :c6))))
   (play (now) 300 (concat (scale :c3 :pentatonic) '(rest) (scale :c3 :pentatonic))))
 
-(defn get-pattern [n th root]
-  (take n (nthrest (cycle (take-nth th (concat (scale root :pentatonic)
-                                               (reverse (scale root :pentatonic)))))
-                   (int (* (rand) 6)))))
-
 (defn fizzbuzz [x]
   (cond (= (rem x 15) 0) '(taiko taiko-w)
         (= (rem x 5)  0) 'taiko
@@ -576,25 +601,6 @@
 
 (defn play-inst []
   (play (now) 300 (fizzbuzz-seq 100)))
-
-
-(defn fizzbuzz2 [x]
-  (cond (= (rem x 35) 0) '(kotudumi rest)
-        (= (rem x 5)  0) '(kotudumi)
-        (= (rem x 7)  0) '(rest)
-        :else '(rest)))
-
-(defn gen-seq [num]
-  (flatten (repeat num (for [x (range 11)]
-                        (cond (= x 0) 'kotudumi
-                              (= x 10) 'clappers
-                              :else 'rest)))))
-
-(defn tudumi-seq [len]
-  (flatten (map (fn [x] (if (= (rem x 10) 0)
-                         'kotudumi
-                         'rest))
-                (range len))))
 
 (defn fibs [a b] (cons a (lazy-seq (fibs b (+' a b)))))
 
