@@ -7,7 +7,7 @@
 (def taiko2 (sample "resources/taiko2.wav"))
 (def taiko3 (sample "resources/taiko3.wav"))
 (def taiko4 (sample "resources/taiko4.wav"))
-(start)
+
 (definst plucked-string [note 60 amp 0.8 dur 2 decay 30 coef 0.3 gate 1]
   (let [freq   (midicps note)
         noize  (* 0.8 (white-noise))
@@ -34,7 +34,8 @@
               3 (gen penta3)
               4 (gen penta4)
               5 (gen penta5)
-              6 (gen penta6))))
+              6 (gen penta6)
+              7 (gen penta6))))
 
 (defn penta-scale [root]
   (let [penta (scale root :pentatonic)]
@@ -58,6 +59,8 @@
               5 (for [n (range 1 5)]
                   (cycle (take-nth n penta5)))
               6 (for [n (range 1 5)]
+                  (cycle (take-nth n penta6)))
+              7 (for [n (range 1 5)]
                   (cycle (take-nth n penta6))))))
 
 (defn get-penta-phrase [key-index]
@@ -66,7 +69,8 @@
 
 (defn gen-pattern [key-index n]
   (cond
-    (or (number? n) (symbol? n) (keyword? n) (char? n)) (take (count (str n)) (get-penta-phrase key-index))
+    (or (number? n) (symbol? n)
+        (keyword? n) (char? n)) (take (count (str n)) (get-penta-phrase key-index))
     (empty? n) nil
     :else (concat (gen-pattern key-index (first n))
                   '(rest)
@@ -125,16 +129,26 @@
 
 (defn make-code-unit [x y width height]
   (let [text-size 37]
+    (q/text-size text-size)
     {:start-x x :start-y y
      :code-start-x (+ x +code-margin-left+)
      :code-start-y (+ y text-size)
      :text-size text-size :text-color [255]
      :selected-bg-color [50]
      :cursor-color [0 255 0]
+     :result "" :result-color [0 255 0]
+     :error "" :error-color [255 0 0]
      :width width :height height
      :cursor-index 0 :code ""
      :playing-millis 0 :playing? false :end-millis 0
      :last-play? false}))
+
+(defn make-repl-pane [x y width height]
+  (let [message "parensymphony> "
+        code-unit (make-code-unit x y width height)]
+    (assoc code-unit
+           :message message
+           :code-start-x (+ x +code-margin-left+ (q/text-width message)))))
 
 (defn setup []
   (q/smooth)
@@ -144,6 +158,7 @@
    :chord-progression (chord-dic 3)
    :phrase (get-penta-phrase 2)
    :code-unit-index 0
+   :repl-index 4
    :code-list [(make-code-unit 0 50
                                (/ (q/screen-width) 2) 350)
                (make-code-unit 0 400
@@ -151,7 +166,9 @@
                (make-code-unit (/ (q/screen-width) 2) 50
                                (/ (q/screen-width) 2) 350)
                (make-code-unit (/ (q/screen-width) 2) 400
-                               (/ (q/screen-width) 2) 350)]
+                               (/ (q/screen-width) 2) 350)
+               (make-repl-pane 0 750
+                               (q/screen-width) (- (q/screen-height) 750))]
    :pressing-ctr? false :pressing-alt? false
    :start-millis 0})
 
@@ -170,26 +187,57 @@
     (apply q/fill cursor-color)
     (q/text (str line-breaks "|") (- x (/ (q/text-width "|") 2)) code-start-y)))
 
-(defn display-code [{:keys [start-x start-y code-start-x code-start-y width height
+(defn fill-selected-bg [{:keys [start-x start-y width height selected-bg-color]
+                        :as code-unit}]
+  (q/with-fill selected-bg-color
+    (q/rect start-x start-y
+            width height)))
+
+(defn display-code-pane [{:keys [start-x start-y code-start-x code-start-y width height
+                                 code text-size text-color selected-bg-color result error
+                                 result-color error-color]
+                     :as code-unit}
+                    index code-unit-index]
+  (if (= index code-unit-index) (fill-selected-bg code-unit))
+  (q/text-size text-size)
+  (q/with-fill text-color
+    (q/text code code-start-x code-start-y))
+  (display-cursor code-unit)
+  (if (not= "" result)
+    (q/with-fill result-color
+      (q/text (str "-> " result) code-start-x (- (+ start-y height) 10))))
+  (if (not= "" error)
+    (q/with-fill error-color
+      (q/text (str "-> " error) code-start-x (- (+ start-y height) 10)))))
+
+(defn display-repl [{:keys [start-x start-y code-start-x code-start-y width height
                             code text-size text-color selected-bg-color]
                      :as code-unit}
                     index code-unit-index]
-  (if (= index code-unit-index)
-    (q/with-fill selected-bg-color
-      (q/rect start-x start-y
-              width height)))
+  (if (= index code-unit-index) (fill-selected-bg code-unit))
   (q/text-size text-size)
-  (apply q/fill text-color)
-  (q/text code code-start-x code-start-y))
+  (q/with-fill text-color
+    (q/text code code-start-x code-start-y)
+    (q/text (:message code-unit) (+ +code-margin-left+ start-x) code-start-y))
+  (display-cursor code-unit))
 
-(defn draw [{:keys [code-list code-unit-index pressing-ctr?] :as state}]
+(defn display-header [{:keys [code-unit-index repl-index]}]
+  (q/with-fill [255]
+    (q/text-size 25)
+    (q/text "(((((((((Parensymphony)))))))))" 10 30)
+    (if (= code-unit-index repl-index)
+      (q/text "(current-pane) -> REPL"
+              (- (/ (q/screen-width) 2) 150) 30)
+      (q/text (str "(current-pane) -> pane-" code-unit-index)
+              (- (/ (q/screen-width) 2) 150) 30 30))))
+
+(defn draw [{:keys [code-list code-unit-index pressing-ctr? repl-index] :as state}]
   (q/background 0)
-  (q/fill 255)
+  (display-header state)
   (doseq [[code-unit index] (map list code-list (range (count code-list)))]
-    (println code-unit-index)
-    (display-code code-unit index code-unit-index)
-    (display-cursor code-unit))
-  (q/text-size 25)
+    (if (= repl-index index)
+      (display-repl code-unit index code-unit-index)
+      (display-code-pane code-unit index code-unit-index)))
   (q/with-stroke [255]
     (q/line 0 50
             (q/screen-width) 50)
@@ -198,15 +246,7 @@
     (q/line 0 400
             (q/screen-width) 400)
     (q/line 0 750
-            (q/screen-width) 750))
-  (if (:pressing-ctr? state)
-    (q/text "pressing ctr" 300 300))
-  (q/text (str (:result (nth (:code-list state)
-                             (:code-unit-index state))))
-          300 400)
-  (q/text (str (:error (nth (:code-list state)
-                            (:code-unit-index state))))
-          300 500))
+            (q/screen-width) 750)))
 
 (defn cursor-move-right [{:keys [cursor-index code] :as code-unit}]
   (if (< cursor-index (count code))
@@ -559,3 +599,4 @@
 (defn fibs [a b] (cons a (lazy-seq (fibs b (+' a b)))))
 
 (start)
+(stop)
