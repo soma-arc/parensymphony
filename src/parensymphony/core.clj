@@ -26,7 +26,7 @@
         penta4 (scale :c4 :pentatonic)
         penta5 (scale :c5 :pentatonic)
         penta6 (scale :c6 :pentatonic)
-        gen (fn [scales] (for [m (range 6)]
+        gen (fn [scales] (for [m (range 5)]
                           (for [n (range m (+ m 3))]
                             (nth scales n))))]
     (hash-map 1 (gen penta1)
@@ -91,7 +91,8 @@
       (apply-by next-time play [next-time sep (rest notes)]))))
 
 (defn play-start [{:keys [code-list] :as state}
-                  code-unit-index]
+                  code-unit-index
+                  & {:keys [take-num] :or {take-num 0}}]
   (let [{:keys [code last-play?] :as code-unit} (nth code-list code-unit-index)
         key-index (+ code-unit-index 2)
         pattern (try (gen-pattern key-index (read-string code))
@@ -101,8 +102,8 @@
     (if (nil? pattern)
       state
       (do
-        (if last-play?
-          (play (now) step-millis  pattern)
+        (if (not= take-num 0)
+          (play (now) step-millis (take take-num (cycle  pattern)))
           (play (now) step-millis (cycle pattern)))
         (assoc state
                :code-list (assoc code-list code-unit-index
@@ -219,7 +220,7 @@
     (q/with-fill error-color
       (q/text (str "-> " error)
               code-start-x (- (+ start-y height) text-size 10)
-              (- width code-start-x) (+ text-size 10)))))
+              width (+ text-size 10)))))
 
 (defn display-repl [{:keys [start-x start-y code-start-x code-start-y width height
                             code text-size text-color selected-bg-color
@@ -426,10 +427,13 @@
             (play-with-key)
             (update-code delete-backward-char)))))
 
-(defn eval-code [code-unit]
+(defn eval-code [code-unit state]
   (try (let [sexp (read-string (:code code-unit))
              result (binding [*ns* (find-ns 'parensymphony.core)]
-                      (eval sexp))]
+                      (if (and (= (count sexp) 1)
+                               (= (first sexp) 'fin))
+                        (do (finale state) "finale")
+                        (eval sexp)))]
          (assoc code-unit :result result :error ""))
        (catch RuntimeException ex (assoc code-unit
                                          :result ""
@@ -443,9 +447,9 @@
     (if (:pressing-ctr? state)
       (if (= code-unit-index repl-index)
         (-> state
-            (update-code eval-code))
+            (update-code eval-code state))
         (-> state
-            (update-code eval-code)
+            (update-code eval-code state)
             (restart-all)
             (play-start code-unit-index)))
       (-> state
@@ -480,6 +484,24 @@
 
 (defmethod key-released-functions :default [key-state state]
   state)
+
+(defn finale [{:keys [code-list code-unit-index start-millis] :as state}]
+  (stop)
+  (assoc state
+         :start-millis (now)
+         :code-list
+         (loop [i 0 new-code-list code-list]
+           (if (< i (count code-list))
+             (recur (inc i) (assoc new-code-list i
+                                   (let [{:keys [playing?] :as code-unit} (nth code-list i)]
+                                     (if playing?
+                                       (nth (:code-list (play-start state i
+                                                                    :take-num (+ 50 (* i 50)))) i)
+                                       code-unit))))
+             new-code-list))))
+
+(defn kill-pattern [code-unit]
+  (assoc code-unit :last-play? true))
 
 (defn key-pressed [state event]
   (let [key-state (make-key-state)]
