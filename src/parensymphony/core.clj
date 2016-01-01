@@ -136,13 +136,15 @@
      :code-start-y (+ y text-size 5)
      :text-size text-size :text-color [255]
      :selected-bg-color [50]
+     :flash-bg-color [100]
      :cursor-color [0 255 0]
      :result "" :result-color [0 255 0]
      :error "" :error-color [255 0 0]
      :width width :height height
      :cursor-index 0 :code ""
      :playing-millis 0 :playing? false :end-millis 0
-     :last-play? false}))
+     :last-play? false
+     :flash? false :flash-frame 0}))
 
 (defn make-repl-pane [x y width height]
   (let [message "parensymphony> "
@@ -165,6 +167,7 @@
    :phrase (get-penta-phrase 2)
    :code-unit-index 0
    :repl-index 4
+   :max-flash-frame 30
    :code-list [(make-code-unit 0 +header-height+
                                (/ (q/screen-width) 2) +code-unit-height+)
                (make-code-unit 0 +start-second-row+
@@ -179,8 +182,22 @@
    :pressing-ctr? false :pressing-alt? false
    :start-millis 0})
 
-(defn update-state [{:keys [code-list] :as state}]
-  state)
+(defn update-state [{:keys [code-list max-flash-frame] :as state}]
+  (assoc state
+         :code-list
+         (loop [i 0 new-code-list code-list]
+           (if (< i (count code-list))
+             (recur (inc i) (assoc new-code-list i
+                                   (let [{:keys [flash? flash-frame] :as code-unit}
+                                         (nth code-list i)]
+                                     (if flash?
+                                       (let [flash-frame (rem (inc flash-frame) (inc max-flash-frame))
+                                             flash? (< flash-frame max-flash-frame)]
+                                         (assoc code-unit
+                                                :flash-frame flash-frame
+                                                :flash? flash?))
+                                       code-unit))))
+             new-code-list))))
 
 
 (defn display-cursor [{:keys [code-start-x code-start-y text-size cursor-index code cursor-color]}]
@@ -194,11 +211,15 @@
     (apply q/fill cursor-color)
     (q/text (str line-breaks "|") (- x (/ (q/text-width "|") 2)) code-start-y)))
 
-(defn fill-selected-bg [{:keys [start-x start-y width height selected-bg-color]
-                        :as code-unit}]
-  (q/with-fill selected-bg-color
-    (q/rect start-x start-y
-            width height)))
+(defn fill-selected-bg [{:keys [start-x start-y width height selected-bg-color flash? flash-bg-color]
+                         :as code-unit}]
+  (if flash?
+    (q/with-fill flash-bg-color
+      (q/rect start-x start-y
+              width height))
+    (q/with-fill selected-bg-color
+      (q/rect start-x start-y
+              width height))))
 
 (defn display-code-pane [{:keys [start-x start-y code-start-x code-start-y width height
                                  code text-size text-color selected-bg-color result error
@@ -434,10 +455,12 @@
                                (= (first sexp) 'fin))
                         (do (finale state) "finale")
                         (eval sexp)))]
-         (assoc code-unit :result result :error ""))
+         (assoc code-unit :result result :error "" :flash? true :frash-frame 0))
        (catch RuntimeException ex (assoc code-unit
                                          :result ""
-                                         :error (.getMessage ex)))))
+                                         :error (.getMessage ex)
+                                         :flash? true
+                                         :flash-frame 0))))
 
 (defmethod key-pressed-functions ":enter" [key-state
                                            {:keys [code-list code-unit-index
