@@ -147,7 +147,7 @@
      :flash? false :flash-frame 0}))
 
 (defn make-repl-pane [x y width height]
-  (let [message "parensymphony> "
+  (let [message "parensymphony REPL> "
         code-unit (make-code-unit x y width height)]
     (assoc code-unit
            :message message
@@ -269,7 +269,7 @@
 (defn display-header [{:keys [code-unit-index repl-index]}]
   (q/with-fill [255]
     (q/text-size 30)
-    (q/text "(((((((((Parensymphony)))))))))" 10 (- +header-height+ 30))
+    (q/text "'(((((((((Parensymphony)))))))))" 10 (- +header-height+ 30))
     (if (= code-unit-index repl-index)
       (q/text "(current-pane) -> REPL"
               (- (/ (q/screen-width) 2) 150) (- +header-height+ 30))
@@ -448,11 +448,26 @@
             (play-with-key)
             (update-code delete-backward-char)))))
 
+(defn finale [{:keys [code-list code-unit-index start-millis] :as state}]
+  (stop)
+  (assoc state
+         :start-millis (now)
+         :code-list
+         (loop [i 0 new-code-list code-list]
+           (if (< i (count code-list))
+             (recur (inc i) (assoc new-code-list i
+                                   (let [{:keys [playing?] :as code-unit} (nth code-list i)]
+                                     (if playing?
+                                       (nth (:code-list (play-start state i
+                                                                    :take-num (+ 50 (* i 50)))) i)
+                                       code-unit))))
+             new-code-list)))) ()
+
 (defn eval-code [code-unit state]
   (try (let [sexp (read-string (:code code-unit))
              result (binding [*ns* (find-ns 'parensymphony.core)]
                       (if (and (= (count sexp) 1)
-                               (= (first sexp) 'fin))
+                               (= (first sexp) 'finale))
                         (do (finale state) "finale")
                         (eval sexp)))]
          (assoc code-unit :result result :error "" :flash? true :frash-frame 0))
@@ -507,21 +522,6 @@
 
 (defmethod key-released-functions :default [key-state state]
   state)
-
-(defn finale [{:keys [code-list code-unit-index start-millis] :as state}]
-  (stop)
-  (assoc state
-         :start-millis (now)
-         :code-list
-         (loop [i 0 new-code-list code-list]
-           (if (< i (count code-list))
-             (recur (inc i) (assoc new-code-list i
-                                   (let [{:keys [playing?] :as code-unit} (nth code-list i)]
-                                     (if playing?
-                                       (nth (:code-list (play-start state i
-                                                                    :take-num (+ 50 (* i 50)))) i)
-                                       code-unit))))
-             new-code-list))))
 
 (defn kill-pattern [code-unit]
   (assoc code-unit :last-play? true))
