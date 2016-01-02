@@ -151,7 +151,9 @@
         code-unit (make-code-unit x y width height)]
     (assoc code-unit
            :message message
-           :code-start-x (+ x +code-margin-left+ (q/text-width message)))))
+           :code-start-x (+ x +code-margin-left+ (q/text-width message))
+           :return-start-x (+ x (/ (q/screen-width) 2))
+           :return-vec [])))
 
 (def +header-height+ 80)
 (def +code-unit-height+ 400)
@@ -245,7 +247,7 @@
 
 (defn display-repl [{:keys [start-x start-y code-start-x code-start-y width height
                             code text-size text-color selected-bg-color
-                            result error result-color error-color]
+                            result-color error-color return-vec]
                      :as code-unit}
                     index code-unit-index]
   (if (= index code-unit-index) (fill-selected-bg code-unit))
@@ -255,16 +257,24 @@
     (q/text (:message code-unit) (+ +code-margin-left+ start-x) code-start-y))
   (display-cursor code-unit)
   (q/text-size 30)
-  (if (not= "" result)
-    (q/with-fill result-color
-      (q/text (str "-> " result)
-              (+ start-x (/ (q/screen-width) 2))
-              code-start-y)))
-  (if (not= "" error)
-    (q/with-fill error-color
-      (q/text (str "-> " error)
-              (+ start-x (/ (q/screen-width) 2))
-              code-start-y))))
+  (doseq [[{:keys [code result error] :as return-val} index]
+          (map list return-vec (range (count return-vec)))]
+    (if (not= "" result)
+      (q/with-fill result-color
+        (q/text code
+                code-start-x
+                (+ code-start-y (* (inc index) text-size)))
+        (q/text (str "-> " result)
+                (+ start-x (/ (q/screen-width) 2))
+                (+ code-start-y (* (inc index) text-size)))))
+    (if (not= "" error)
+      (q/with-fill error-color
+        (q/text code
+                code-start-x
+                (+ code-start-y (* (inc index) text-size)))
+        (q/text (str "-> " error)
+                (+ start-x (/ (q/screen-width) 2))
+                (+ code-start-y (* (inc index) text-size)))))))
 
 (defn display-header [{:keys [code-unit-index repl-index]}]
   (q/with-fill [255]
@@ -404,9 +414,6 @@
 (defmethod key-pressed-functions ":control" [key-state state]
   (assoc state :pressing-ctr? true))
 
-(defn kill-pattern [code-unit]
-  (assoc code-unit :last-play? true))
-
 (defn restart-all [{:keys [code-list code-unit-index start-millis] :as state}]
   (stop)
   (assoc state
@@ -420,16 +427,6 @@
                                        (nth (:code-list (play-start state i)) i)
                                        code-unit))))
              new-code-list))))
-
-(defmethod key-pressed-functions ":p" [key-state {:keys [code-list code-unit-index] :as state}]
-  (if (:pressing-ctr? state)
-    (-> state
-        (update-code kill-pattern)
-        (restart-all))
-    (-> state
-        (play-with-key)
-        (update-code insert-char (q/raw-key))
-        (update-code cursor-move-right))))
 
 (defmethod key-pressed-functions ":alt" [key-state state]
   (-> state
@@ -477,6 +474,19 @@
                                          :flash? true
                                          :flash-frame 0))))
 
+(defn push-return-vec [{:keys [code-list repl-index] :as state}]
+  (assoc state
+         :code-list
+         (assoc code-list repl-index
+                (let [{:keys [code result error return-vec] :as repl-unit}
+                      (nth code-list repl-index)
+                      return-vec (if (> (count return-vec) 10)
+                                   (butlast return-vec)
+                                   return-vec)]
+                  (assoc repl-unit :return-vec (cons {:code code
+                                                      :result result
+                                                      :error error} return-vec))))))
+
 (defmethod key-pressed-functions ":enter" [key-state
                                            {:keys [code-list code-unit-index
                                                    repl-index]
@@ -485,7 +495,9 @@
     (if (:pressing-ctr? state)
       (if (= code-unit-index repl-index)
         (-> state
-            (update-code eval-code state))
+            (update-code eval-code state)
+            (push-return-vec)
+            (update-code delete-all))
         (-> state
             (update-code eval-code state)
             (restart-all)
