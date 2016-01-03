@@ -484,23 +484,26 @@
                                          playing-pattern (try (take take-num (cycle (gen-pattern 3 (read-string code))))
                                                               (catch RuntimeException ex nil))]
                                      (if playing?
-                                       (assoc (nth (:code-list (play-start state i
-                                                                           :take-num take-num)) i)
+                                       (assoc (nth (:code-list (play-start state i :take-num take-num)) i)
                                               :playing-pattern playing-pattern)
                                        code-unit))))
              new-code-list))))
 
-(defn eval-code [code-unit state]
-  (try (let [sexp (read-string (:code code-unit))
-             result (binding [*ns* (find-ns 'parensymphony.core)]
-                      (if (and (= (count sexp) 1)
-                               (= (first sexp) 'finale))
-                        (do (finale state) "finale")
-                        (eval sexp)))]
-         (assoc code-unit :result result :error ""))
-       (catch RuntimeException ex (assoc code-unit
-                                         :result ""
-                                         :error (.getMessage ex)))))
+(defn eval-code [{:keys [code-list code-unit-index] :as state}]
+  (let [code-unit (nth code-list code-unit-index)
+        new-code-unit (try (let [sexp (read-string (:code code-unit))
+                                 result (binding [*ns* (find-ns 'parensymphony.core)]
+                                          (if (= sexp '(finale))
+                                            "finale"
+                                            (eval sexp)))]
+                             (assoc code-unit :result result :error ""))
+                           (catch RuntimeException ex (assoc code-unit
+                                                             :result ""
+                                                             :error (.getMessage ex))))
+        state (assoc state :code-list (assoc code-list code-unit-index new-code-unit))]
+    (if (= "finale" (:result new-code-unit))
+      (finale state)
+      state)))
 
 (defn push-return-vec [{:keys [code-list repl-index] :as state}]
   (assoc state
@@ -519,13 +522,11 @@
                                            {:keys [code-list code-unit-index
                                                    repl-index]
                                             :as state}]
-  (let [code-unit (nth code-list code-unit-index)
-        state (if (= '(finale) (read-string (:code code-unit)))
-                (finale state)
-                (update-code state eval-code state))]
+  (let [code-unit (nth code-list code-unit-index)]
     (if (:pressing-ctr? state)
       (if (= code-unit-index repl-index)
         (-> state
+            (eval-code)
             (push-return-vec)
             (update-code delete-all)
             (update-code (fn [code-unit]
@@ -533,7 +534,7 @@
                                   :saturation 100
                                   :brightness 70))))
         (-> state
-            (update-code eval-code state)
+            (eval-code)
             (update-code (fn [code-unit] (assoc code-unit :playing? true)))
             (restart-all)
             ))
