@@ -157,6 +157,18 @@
            :return-start-x (+ x (/ (q/screen-width) 2))
            :return-vec [])))
 
+(def scripts
+  ["(defn fibs [a b] (cons a (lazy-seq (fibs b (+' a b)))))"
+   "(defn fizzbuzz [x]
+  (cond (= (rem x 15) 0) '(taiko taiko-w)
+           (= (rem x 5)  0) 'taiko
+           (= (rem x 3)  0) 'taiko-w
+           :else 'rest))"
+   "(defn fizzbuzz-seq [len]
+  (flatten (map fizzbuzz (take len (fibs 1 1)))))"
+   "(defn play-taiko [len]
+  (play (now) 300 (fizzbuzz-seq len)))"])
+
 (def +header-height+ 80)
 (def +code-unit-height+ 400)
 (def +start-second-row+ (+ +header-height+ +code-unit-height+))
@@ -364,7 +376,8 @@
 (def special-key-code-dic (hash-map 8 :backspace
                                     9 :tab
                                     10 :enter
-                                    80 :p))
+                                    80 :p
+                                    82 :r))
 
 (defn make-key-state []
   {:raw-key (q/raw-key)
@@ -543,6 +556,20 @@
           (update-code insert-char "\n")
           (update-code cursor-move-right)))))
 
+(defmethod key-pressed-functions ":r" [key-state
+                                           {:keys [code-list code-unit-index
+                                                   repl-index]
+                                            :as state}]
+  (if (:pressing-ctr? state)
+    (let [code-unit (nth code-list code-unit-index)]
+      (update-code state (fn [code-unit] (assoc code-unit
+                                               :code (nth scripts code-unit-index)
+                                               :cursor-index (count (nth scripts code-unit-index))))))
+    (-> state
+        (play-with-key)
+        (update-code insert-char (q/raw-key))
+        (update-code cursor-move-right))))
+
 (defmethod key-pressed-functions ":tab" [key-state
                                            {:keys [code-list code-unit-index] :as state}]
   (-> state
@@ -688,17 +715,12 @@
 
 (defn fibs [a b] (cons a (lazy-seq (fibs b (+' a b)))))
 
-(defn fizzbuzz-seq [len]
-  (flatten (map fizzbuzz (fibs 1 1))))
-
-(defn play-inst []
-  (play (now) 300 (fizzbuzz-seq 100)))
-
 
 (defn fizzbuzz-seq [seq]
   (flatten (map fizzbuzz seq)))
 
-(take 100 (fibs 1 1))
+(defn play-taiko [seq]
+  (play (now) 300 (fizzbuzz-seq seq)))
 
 (start)
 (stop)
