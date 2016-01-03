@@ -108,6 +108,7 @@
         (assoc state
                :code-list (assoc code-list code-unit-index
                                  (assoc code-unit
+                                        :playing-pattern pattern
                                         :playing-millis 0
                                         :playing? (not last-play?)
                                         :end-millis length)))))))
@@ -128,27 +129,28 @@
 
 (def +code-margin-left+ 20)
 
-(defn make-code-unit [x y width height]
+(defn make-code-unit [x y width height hue]
   (let [text-size 37]
     (q/text-size text-size)
     {:start-x x :start-y y
      :code-start-x (+ x +code-margin-left+)
      :code-start-y (+ y text-size 5)
-     :text-size text-size :text-color [255]
-     :selected-bg-color [50]
-     :flash-bg-color [100]
-     :cursor-color [0 255 0]
-     :result "" :result-color [0 255 0]
-     :error "" :error-color [255 0 0]
+     :text-size text-size :text-color [315 0 100]
+     :hue hue
+     :saturation 0
+     :brightness 0
+     :cursor-color [125 100 100]
+     :result "" :result-color [125 100 100]
+     :error "" :error-color [0 100 100]
      :width width :height height
      :cursor-index 0 :code ""
+     :playing-pattern []
      :playing-millis 0 :playing? false :end-millis 0
-     :last-play? false
-     :flash? false :flash-frame 0}))
+     :last-play? false}))
 
-(defn make-repl-pane [x y width height]
+(defn make-repl-pane [x y width height hue]
   (let [message "parensymphony REPL> "
-        code-unit (make-code-unit x y width height)]
+        code-unit (make-code-unit x y width height hue)]
     (assoc code-unit
            :message message
            :code-start-x (+ x +code-margin-left+ (q/text-width message))
@@ -163,44 +165,70 @@
 (defn setup []
   (q/smooth)
   (q/background 0)
+  (q/color-mode :hsb 360 100 100)
   {:pressed-key ""
    :key-index 2
    :chord-progression (chord-dic 3)
    :phrase (get-penta-phrase 2)
    :code-unit-index 0
    :repl-index 4
-   :max-flash-frame 30
    :code-list [(make-code-unit 0 +header-height+
-                               (/ (q/screen-width) 2) +code-unit-height+)
+                               (/ (q/screen-width) 2) +code-unit-height+
+                               125)
                (make-code-unit 0 +start-second-row+
-                               (/ (q/screen-width) 2) +code-unit-height+)
+                               (/ (q/screen-width) 2) +code-unit-height+
+                               315)
                (make-code-unit (/ (q/screen-width) 2) +header-height+
-                               (/ (q/screen-width) 2) +code-unit-height+)
+                               (/ (q/screen-width) 2) +code-unit-height+
+                               180)
                (make-code-unit (/ (q/screen-width) 2) +start-second-row+
-                               (/ (q/screen-width) 2) +code-unit-height+)
+                               (/ (q/screen-width) 2) +code-unit-height+
+                               27)
                (make-repl-pane 0 +start-repl-row+
                                (q/screen-width) (- (q/screen-height)
-                                                   +start-repl-row+))]
+                                                   +start-repl-row+)
+                               45)]
    :pressing-ctr? false :pressing-alt? false
    :start-millis 0})
 
-(defn update-state [{:keys [code-list max-flash-frame] :as state}]
+(defn update-state [{:keys [code-list code-unit-index start-millis last-play?] :as state}]
   (assoc state
          :code-list
          (loop [i 0 new-code-list code-list]
            (if (< i (count code-list))
-             (recur (inc i) (assoc new-code-list i
-                                   (let [{:keys [flash? flash-frame] :as code-unit}
-                                         (nth code-list i)]
-                                     (if flash?
-                                       (let [flash-frame (rem (inc flash-frame) (inc max-flash-frame))
-                                             flash? (< flash-frame max-flash-frame)]
-                                         (assoc code-unit
-                                                :flash-frame flash-frame
-                                                :flash? flash?))
-                                       code-unit))))
+             (recur (inc i)
+                    (assoc new-code-list i
+                           (let [{:keys [playing-pattern playing? saturation brightness] :as code-unit}
+                                 (nth code-list i)
+                                 min-brightness (if (= i code-unit-index)
+                                                  25
+                                                  0)
+                                 index (if (and last-play?
+                                                (> (/ (- (now) start-millis) 300)
+                                                   (dec (count playing-pattern))))
+                                         -1
+                                         (rem (/ (- (now) start-millis) 300)
+                                              (max 1 (count playing-pattern))))
+                                 saturation (if (and playing?
+                                                     (not= index -1)
+                                                     (not= (nth playing-pattern index) 'rest)
+                                                     (< (rem (- (now) start-millis)
+                                                             300)
+                                                        50))
+                                              100
+                                              saturation)
+                                 brightness (if (and playing?
+                                                     (not= index -1)
+                                                     (not= (nth playing-pattern index) 'rest)
+                                                     (< (rem (- (now) start-millis)
+                                                             300)
+                                                        50))
+                                              (+ min-brightness 70)
+                                              brightness)]
+                             (assoc code-unit
+                                    :saturation (max 0 (- saturation 2))
+                                    :brightness (max min-brightness (- brightness 2))))))
              new-code-list))))
-
 
 (defn display-cursor [{:keys [code-start-x code-start-y text-size cursor-index code cursor-color]}]
   (let [c (map count (clojure.string/split code #"\n"))
@@ -213,22 +241,19 @@
     (apply q/fill cursor-color)
     (q/text (str line-breaks "|") (- x (/ (q/text-width "|") 2)) code-start-y)))
 
-(defn fill-selected-bg [{:keys [start-x start-y width height selected-bg-color flash? flash-bg-color]
-                         :as code-unit}]
-  (if flash?
-    (q/with-fill flash-bg-color
-      (q/rect start-x start-y
-              width height))
-    (q/with-fill selected-bg-color
-      (q/rect start-x start-y
-              width height))))
+(defn fill-bg [{:keys [start-x start-y width height
+                       hue saturation brightness]
+                :as code-unit}]
+  (q/with-fill [hue saturation brightness]
+    (q/rect start-x start-y
+            width height)))
 
 (defn display-code-pane [{:keys [start-x start-y code-start-x code-start-y width height
                                  code text-size text-color selected-bg-color result error
                                  result-color error-color]
                      :as code-unit}
-                    index code-unit-index]
-  (if (= index code-unit-index) (fill-selected-bg code-unit))
+                         index code-unit-index]
+  (fill-bg code-unit)
   (q/text-size text-size)
   (q/with-fill text-color
     (q/text code code-start-x code-start-y))
@@ -258,7 +283,7 @@
   (display-cursor code-unit)
   (q/text-size 30)
   (doseq [[{:keys [code result error] :as return-val} index]
-          (map list return-vec (range (count return-vec)))]
+            (map list return-vec (range (count return-vec)))]
     (if (not= "" result)
       (q/with-fill result-color
         (q/text code
@@ -277,7 +302,7 @@
                 (+ code-start-y (* (inc index) text-size)))))))
 
 (defn display-header [{:keys [code-unit-index repl-index]}]
-  (q/with-fill [255]
+  (q/with-fill [315 0 100]
     (q/text-size 30)
     (q/text "'(((((((((Parensymphony)))))))))" 10 (- +header-height+ 30))
     (if (= code-unit-index repl-index)
@@ -287,7 +312,7 @@
               (- (/ (q/screen-width) 2) 150) (- +header-height+ 30)))))
 
 (defn draw [{:keys [code-list code-unit-index pressing-ctr? repl-index] :as state}]
-  (q/background 0)
+  (q/background 315 0 0)
   (display-header state)
   (doseq [[code-unit index] (map list code-list (range (count code-list)))]
     (if (= repl-index index)
@@ -449,16 +474,21 @@
   (stop)
   (assoc state
          :start-millis (now)
+         :last-play? true
          :code-list
          (loop [i 0 new-code-list code-list]
            (if (< i (count code-list))
              (recur (inc i) (assoc new-code-list i
-                                   (let [{:keys [playing?] :as code-unit} (nth code-list i)]
+                                   (let [{:keys [playing? code] :as code-unit} (nth code-list i)
+                                         take-num (+ 30 (* i 30))
+                                         playing-pattern (try (take take-num (cycle (gen-pattern 3 (read-string code))))
+                                                              (catch RuntimeException ex nil))]
                                      (if playing?
-                                       (nth (:code-list (play-start state i
-                                                                    :take-num (+ 50 (* i 50)))) i)
+                                       (assoc (nth (:code-list (play-start state i
+                                                                           :take-num take-num)) i)
+                                              :playing-pattern playing-pattern)
                                        code-unit))))
-             new-code-list)))) ()
+             new-code-list))))
 
 (defn eval-code [code-unit state]
   (try (let [sexp (read-string (:code code-unit))
@@ -467,12 +497,10 @@
                                (= (first sexp) 'finale))
                         (do (finale state) "finale")
                         (eval sexp)))]
-         (assoc code-unit :result result :error "" :flash? true :frash-frame 0))
+         (assoc code-unit :result result :error ""))
        (catch RuntimeException ex (assoc code-unit
                                          :result ""
-                                         :error (.getMessage ex)
-                                         :flash? true
-                                         :flash-frame 0))))
+                                         :error (.getMessage ex)))))
 
 (defn push-return-vec [{:keys [code-list repl-index] :as state}]
   (assoc state
@@ -491,17 +519,24 @@
                                            {:keys [code-list code-unit-index
                                                    repl-index]
                                             :as state}]
-  (let [code-unit (nth code-list code-unit-index)]
+  (let [code-unit (nth code-list code-unit-index)
+        state (if (= '(finale) (read-string (:code code-unit)))
+                (finale state)
+                (update-code state eval-code state))]
     (if (:pressing-ctr? state)
       (if (= code-unit-index repl-index)
         (-> state
-            (update-code eval-code state)
             (push-return-vec)
-            (update-code delete-all))
+            (update-code delete-all)
+            (update-code (fn [code-unit]
+                           (assoc code-unit
+                                  :saturation 100
+                                  :brightness 70))))
         (-> state
             (update-code eval-code state)
+            (update-code (fn [code-unit] (assoc code-unit :playing? true)))
             (restart-all)
-            (play-start code-unit-index)))
+            ))
       (-> state
           (play-chord-with-key)
           (update-code insert-char "\n")
@@ -534,9 +569,6 @@
 
 (defmethod key-released-functions :default [key-state state]
   state)
-
-(defn kill-pattern [code-unit]
-  (assoc code-unit :last-play? true))
 
 (defn key-pressed [state event]
   (let [key-state (make-key-state)]
@@ -653,13 +685,19 @@
         (= (rem x 3)  0) 'taiko-w
         :else 'rest))
 
+(defn fibs [a b] (cons a (lazy-seq (fibs b (+' a b)))))
+
 (defn fizzbuzz-seq [len]
-  (flatten (map fizzbuzz (range len))))
+  (flatten (map fizzbuzz (fibs 1 1))))
 
 (defn play-inst []
   (play (now) 300 (fizzbuzz-seq 100)))
 
-(defn fibs [a b] (cons a (lazy-seq (fibs b (+' a b)))))
+
+(defn fizzbuzz-seq [seq]
+  (flatten (map fizzbuzz seq)))
+
+(take 100 (fibs 1 1))
 
 (start)
 (stop)
