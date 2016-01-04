@@ -158,7 +158,8 @@
            :return-vec [])))
 
 (def scripts
-  ["(defn fibs [a b] (cons a (lazy-seq (fibs b (+' a b)))))"
+  ["(defn fibs [a b]
+  (cons a (lazy-seq (fibs b (+' a b)))))"
    "(defn fizzbuzz [x]
   (cond (= (rem x 15) 0) '(taiko taiko-w)
            (= (rem x 5)  0) 'taiko
@@ -378,7 +379,8 @@
                                     10 :enter
                                     80 :p
                                     82 :r
-                                    75 :k))
+                                    75 :k
+                                    85 :u))
 
 (defn make-key-state []
   {:raw-key (q/raw-key)
@@ -550,8 +552,7 @@
         (-> state
             (eval-code)
             (update-code (fn [code-unit] (assoc code-unit :playing? true)))
-            (restart-all)
-            ))
+            (restart-all)))
       (-> state
           (play-chord-with-key)
           (update-code insert-char "\n")
@@ -562,10 +563,23 @@
                                                    repl-index]
                                             :as state}]
   (if (:pressing-ctr? state)
-    (let [code-unit (nth code-list code-unit-index)]
-      (update-code state (fn [code-unit] (assoc code-unit
-                                               :code (nth scripts code-unit-index)
-                                               :cursor-index (count (nth scripts code-unit-index))))))
+    (if (= repl-index code-unit-index)
+      state
+      (let [code-unit (nth code-list code-unit-index)]
+        (update-code state (fn [code-unit] (assoc code-unit
+                                                 :code (nth scripts code-unit-index)
+                                                 :cursor-index (count (nth scripts code-unit-index)))))))
+    (-> state
+        (play-with-key)
+        (update-code insert-char (q/raw-key))
+        (update-code cursor-move-right))))
+
+(defmethod key-pressed-functions ":u" [key-state
+                                           {:keys [code-list code-unit-index
+                                                   repl-index]
+                                            :as state}]
+  (if (:pressing-ctr? state)
+    (restart-all state)
     (-> state
         (play-with-key)
         (update-code insert-char (q/raw-key))
@@ -677,7 +691,6 @@
                                              (* (env-gen (perc) :action FREE))))))
     (play (now) 300 (gen-pattern 4 '(defn key-pressed [state event]
                                       (let [key-state (make-key-state)]
-                                        (println key-state)
                                         (key-pressed-functions key-state state)))))
     (play (now) 300 (gen-pattern 5 '(definst saw-wave [freq 1 attack 0.01 sustain 0.4 release 0.1 vol 0.4]
                                       (* (env-gen (lin attack sustain release) 1 1 0 1 FREE)
