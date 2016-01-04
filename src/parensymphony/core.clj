@@ -287,7 +287,7 @@
                             result-color error-color return-vec]
                      :as code-unit}
                     index code-unit-index]
-  (if (= index code-unit-index) (fill-selected-bg code-unit))
+  (fill-bg code-unit)
   (q/text-size text-size)
   (q/with-fill text-color
     (q/text code code-start-x code-start-y)
@@ -377,7 +377,8 @@
                                     9 :tab
                                     10 :enter
                                     80 :p
-                                    82 :r))
+                                    82 :r
+                                    75 :k))
 
 (defn make-key-state []
   {:raw-key (q/raw-key)
@@ -570,6 +571,19 @@
         (update-code insert-char (q/raw-key))
         (update-code cursor-move-right))))
 
+(defmethod key-pressed-functions ":k" [key-state
+                                           {:keys [code-list code-unit-index
+                                                   repl-index]
+                                            :as state}]
+  (if (:pressing-ctr? state)
+    (do
+      (kill plucked-string)
+      state)
+    (-> state
+        (play-with-key)
+        (update-code insert-char (q/raw-key))
+        (update-code cursor-move-right))))
+
 (defmethod key-pressed-functions ":tab" [key-state
                                            {:keys [code-list code-unit-index] :as state}]
   (-> state
@@ -714,7 +728,6 @@
         :else 'rest))
 
 (defn fibs [a b] (cons a (lazy-seq (fibs b (+' a b)))))
-
 
 (defn fizzbuzz-seq [seq]
   (flatten (map fizzbuzz seq)))
