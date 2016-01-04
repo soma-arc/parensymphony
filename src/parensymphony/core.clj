@@ -166,12 +166,14 @@
            (= (rem x 3)  0) 'taiko-w
            :else 'rest))"
    "(defn fizzbuzz-seq [len]
-  (flatten (map fizzbuzz (take len (fibs 1 1)))))"
+  (flatten
+    (map fizzbuzz
+           (take len (fibs 1 1)))))"
    "(defn play-taiko [len]
   (play (now) 300 (fizzbuzz-seq len)))"])
 
-(def +header-height+ 80)
-(def +code-unit-height+ 400)
+(def +header-height+ 70)
+(def +code-unit-height+ 330)
 (def +start-second-row+ (+ +header-height+ +code-unit-height+))
 (def +start-repl-row+ (+ +header-height+ +code-unit-height+ +code-unit-height+))
 
