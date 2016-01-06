@@ -77,7 +77,7 @@
                   (gen-pattern key-index (rest n)))))
 
 (defn play-chord [inst a-chord]
-  (doseq [note a-chord] (inst note :dur 12)))
+  (doseq [note a-chord] (inst note :dur 5)))
 
 (defn play [time sep notes]
   (let [note (first notes)]
