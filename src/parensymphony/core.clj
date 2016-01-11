@@ -637,14 +637,6 @@
   (let [key-state (make-key-state)]
     (key-released-functions key-state state)))
 
-(defn symphony-read [code]
-  (try (read-string code)
-       (catch RuntimeException ex nil)))
-
-(defn symphony-eval [sexp]
-  (try (eval sexp)
-       (catch RuntimeException ex nil)))
-
 (defn start []
   (q/defsketch parensymphony
     :title "symphony"
@@ -667,88 +659,21 @@
 (defn char->keycode [char]
   (char-keycode-map (keyword (str char)) 55))
 
-(defn play-loop []
-  (play (now) 300 (gen-pattern 2 '(definst ping [freq 440]
-                                      (-> freq
-                                          square
-                                          (* (env-gen (perc) :action FREE)))))))
-
 (comment
-  ;;'(((((((((Lisp)))))))))
-  ;;program = data = score
-  ;;S expression -> phrase
-  (let []
-    (stop)
-    (play (now) 300  (gen-pattern 1 '(definst ping [freq 440]
-                                         (-> freq
-                                             square
-                                             (* (env-gen (perc) :action FREE))))))
-    (play (now) 300  (gen-pattern 2 '(definst ping [freq 440]
-                                         (-> freq
-                                             square
-                                             (* (env-gen (perc) :action FREE))))))
-    (play (now) 300  (gen-pattern 3 '(definst beep [freq 440]
-                                         (-> freq
-                                             saw
-                                             (* (env-gen (perc) :action FREE))))))
-    (play (now) 300 (gen-pattern 4 '(defn key-pressed [state event]
-                                      (let [key-state (make-key-state)]
-                                        (key-pressed-functions key-state state)))))
-    (play (now) 300 (gen-pattern 5 '(definst saw-wave [freq 1 attack 0.01 sustain 0.4 release 0.1 vol 0.4]
-                                      (* (env-gen (lin attack sustain release) 1 1 0 1 FREE)
-                                         (saw (* freq 100))
-                                         vol))))
-    (play (now) 300 (fizzbuzz-seq 60)))
-  (stop)
-  (start)
-  )
+  (defn fizzbuzz [x]
+    (cond (= (rem x 15) 0) '(taiko taiko-w)
+          (= (rem x 5)  0) 'taiko
+          (= (rem x 3)  0) 'taiko-w
+          :else 'rest))
 
+  (defn fibs [a b]
+    (cons a (lazy-seq (fibs b (+' a b)))))
 
+  (defn fizzbuzz-seq [seq]
+    (flatten (map fizzbuzz seq)))
 
-(comment
-  (let []
-    (play (now) 300 (take 30 (nthrest (cycle (take-nth 3 (concat (scale :C2 :pentatonic)
-                                                                 (reverse (scale :c2 :pentatonic)))))
-                                      (int (* (rand) 6)))))
-    (play (now) 300 (take 30 (nthrest (cycle (take-nth 2 (concat (scale :C3 :pentatonic)
-                                                                 (reverse (scale :c3 :pentatonic)))))
-                                      (int (* (rand) 6)))))
-    (:id (play (now) 300 (take 30 (nthrest (cycle (take-nth 4 (concat (scale :C4 :pentatonic)
-                                                                        (reverse (scale :c4 :pentatonic)))))
-                                           (int (* (rand) 6))))))
-    (play (now) 300 (flatten (map fizzbuzz (range 100)))))
-
-  (let []
-    (play (now) 300 (concat (get-pattern 3 2 :c5)
-                        '(rest)
-                        (get-pattern 4 3 :c5)
-                        '(rest)
-                        (get-pattern 5 3 :c5)))
-    (play (now) 300 (concat (get-pattern 4 2 :c3)
-                        '(rest)
-                        (get-pattern 4 2 :c3)
-                        '(rest )
-                        (get-pattern 4 3 :c3)))
-    (play (now) 300 (concat (get-pattern 5 4 :c6)
-                            '(rest)
-                            (get-pattern 6 2 :c6)
-                            '(rest)
-                            (get-pattern 3 2 :c6))))
-  (play (now) 300 (concat (scale :c3 :pentatonic) '(rest) (scale :c3 :pentatonic))))
-
-(defn fizzbuzz [x]
-  (cond (= (rem x 15) 0) '(taiko taiko-w)
-        (= (rem x 5)  0) 'taiko
-        (= (rem x 3)  0) 'taiko-w
-        :else 'rest))
-
-(defn fibs [a b] (cons a (lazy-seq (fibs b (+' a b)))))
-
-(defn fizzbuzz-seq [seq]
-  (flatten (map fizzbuzz seq)))
-
-(defn play-taiko [seq]
-  (play (now) 300 (fizzbuzz-seq seq)))
+  (defn play-taiko [seq]
+    (play (now) 300 (fizzbuzz-seq seq))))
 
 (start)
 (stop)
