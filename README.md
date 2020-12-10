@@ -9,3 +9,12 @@ Live coding environment for audio visual performance using lisp (Clojure.)
 ## library
 - [Quil](http://quil.info/)
 - [Overtone](https://github.com/overtone/overtone)
+
+## Author
+- soma_arc (Kento Nakamura)
+
+## Copyright
+Copyright (c) 2015 soma_arc (Kento Nakamura)
+
+## License
+Licensed under GPL-3.0
